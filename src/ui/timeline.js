@@ -359,6 +359,7 @@
   }
 
   function hoverEnd() {
+    if (state.mode !== 'day') return; // never repaint week/month with day state
     state.cursor = null;
     state.tip = null;
     if (state.canvas) draw(state.canvas);
@@ -397,6 +398,8 @@
 
   function renderWeek(canvas, data) {
     state.mode = 'week';
+    state.chart = null; // a stale day chart must never redraw over the grid
+    state.canvas = canvas;
     const hits = [];
     const { ctx, W, H } = prepCanvas(canvas);
     ctx.clearRect(0, 0, W, H);
@@ -489,6 +492,8 @@
 
   function renderMonth(canvas, data) {
     state.mode = 'month';
+    state.chart = null; // a stale day chart must never redraw over the grid
+    state.canvas = canvas;
     const hits = [];
     const { ctx, W, H } = prepCanvas(canvas, 420);
     ctx.clearRect(0, 0, W, H);

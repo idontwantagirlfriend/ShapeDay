@@ -293,6 +293,28 @@ async function run({ app, getMainWin, state, windows }) {
     vizMonth.days.length >= 1 && vizMonth.fromKey.endsWith('-01') && vizMonth.days.some((d) => d.date === snap.date));
   check('viz:days carries per-day and period summaries',
     typeof vizWeek.days[0].summary === 'string' && 'periodSummary' in vizWeek);
+
+  // regression: leaving the canvas at a grid's edge used to repaint the stale
+  // day chart over the week/month pixels (hoverEnd drew state.chart blindly)
+  const edgeFlicker = await win.webContents.executeJavaScript(`(async () => {
+    const canvas = document.getElementById('timeline');
+    document.querySelector('[data-view=viz]').click();
+    document.querySelector('[data-viz=week]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const snap = () => canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data.join(',');
+    const results = [];
+    for (const scope of ['week', 'month']) {
+      document.querySelector('[data-viz=' + scope + ']').click();
+      await new Promise((r) => setTimeout(r, 700));
+      const before = snap();
+      canvas.dispatchEvent(new MouseEvent('mouseleave'));
+      window.Timeline.hoverEnd();
+      await new Promise((r) => setTimeout(r, 120));
+      results.push(before === snap());
+    }
+    return results.every(Boolean);
+  })()`);
+  check('canvas pixels unchanged by mouseleave in week/month', edgeFlicker === true);
   const repMonth = await call('report:get', { scope: 'month' });
   const repYear = await call('report:get', { scope: 'year' });
   check('month and year report scopes work',
