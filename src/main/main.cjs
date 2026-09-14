@@ -5,7 +5,8 @@
 'use strict';
 const path = require('path');
 const fs = require('fs');
-const { app, Tray, Menu, ipcMain, globalShortcut, nativeImage } = require('electron');
+const crypto = require('crypto');
+const { app, Tray, Menu, ipcMain, globalShortcut, nativeImage, dialog } = require('electron');
 
 const Store = require('../core/store.cjs');
 const { createState } = require('./state.cjs');
@@ -13,24 +14,73 @@ const windows = require('./windows.cjs');
 
 const store = Store.open(path.join(app.getPath('userData'), 'shapeday.json'));
 
-// Editable LLM prompts: bundled defaults seeded into the data dir once;
-// from then on the user's files win (llm.cjs re-reads them per call).
+// Editable LLM prompts. Bundled defaults (prompts/ in the package) seed the
+// data dir; a data-dir copy that the user has NOT edited since seeding is
+// refreshed whenever the bundled default changes, so prompt updates in the
+// repo reach machines that were already seeded. An edited copy always wins.
+// LEGACY_DEFAULTS fingerprints installs seeded before the marker existed.
+const LEGACY_DEFAULTS = {
+  eta: [
+    'You estimate how long tasks take for one person, today.',
+    'Reply ONLY with JSON: {"tasks":[{"id":"...","minutes":N}]}',
+    'Rules: whole minutes, 5..240. Use the history (actual vs estimated) to correct for this person’s bias.',
+    'No prose, no markdown, no extra keys.',
+  ].join(' '),
+  summary: [
+    'You are a work-health reviewer for one person. You get metrics and their tasks with estimates vs actuals.',
+    'Pinpoint the REAL issues; do not pad. At most 4. If nothing is wrong, say so.',
+    'Reply ONLY with JSON: {"headline":"one short line","issues":[{"sev":"high|med|low|ok","text":"one line","fix":"one line"}]}',
+    'Terse. One line each. No essays, no praise padding.',
+  ].join(' '),
+};
 const PROMPTS_DIR = path.join(app.getPath('userData'), 'prompts');
 try {
   fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+  const markerPath = path.join(PROMPTS_DIR, '.seeded.json');
+  let seeded = {};
+  try {
+    seeded = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+  } catch {
+    // first run, or unreadable marker: entries without records are checked
+    // against LEGACY_DEFAULTS below before being treated as user-owned
+  }
+  const sha256 = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+  const shaText = (t) => crypto.createHash('sha256').update(t).digest('hex');
   for (const name of ['eta.txt', 'summary.txt']) {
+    const base = name.replace('.txt', '');
     const dest = path.join(PROMPTS_DIR, name);
+    const src = path.join(__dirname, '..', '..', 'prompts', name);
     if (!fs.existsSync(dest)) {
-      fs.copyFileSync(path.join(__dirname, '..', '..', 'prompts', name), dest);
+      fs.copyFileSync(src, dest);
+      seeded[name] = sha256(dest);
+    } else {
+      // pre-marker installs: recognize the verbatim legacy default (trailing
+      // whitespace normalized — the seed copied files verbatim)
+      const isLegacy =
+        !seeded[name] &&
+        LEGACY_DEFAULTS[base] != null &&
+        fs.readFileSync(dest, 'utf8').trimEnd() === LEGACY_DEFAULTS[base].trimEnd();
+      const known = seeded[name] ?? (isLegacy ? shaText(LEGACY_DEFAULTS[base].trimEnd()) : null);
+      if (known && known === sha256(dest) && known !== sha256(src)) {
+        fs.copyFileSync(src, dest); // untouched seed, bundled evolved: refresh
+        seeded[name] = sha256(dest);
+      } else if (!seeded[name]) {
+        seeded[name] = sha256(dest); // user-owned or current: record it
+      }
     }
   }
+  fs.writeFileSync(markerPath, JSON.stringify(seeded, null, 2));
 } catch (e) {
   console.error('[prompts] seeding failed:', e.message);
 }
 
 // onDirty: async LLM completions mutate state after the action returns —
 // they re-pump so every window sees the update immediately.
-const state = createState(store, { onDirty: () => pump(), promptsDir: PROMPTS_DIR });
+const state = createState(store, {
+  onDirty: () => pump(),
+  promptsDir: PROMPTS_DIR,
+  bundledPromptsDir: path.join(__dirname, '..', '..', 'prompts'),
+});
 
 let mainWin = null;
 let barWin = null;
@@ -118,7 +168,7 @@ function handleBarDrag(p) {
   return { ok: true };
 }
 
-ipcMain.handle('shapeday:call', (_e, { kind, payload }) => {
+ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
   if (kind === 'focusMain') {
     if (mainWin && !mainWin.isDestroyed()) {
       mainWin.show();
@@ -132,6 +182,21 @@ ipcMain.handle('shapeday:call', (_e, { kind, payload }) => {
       return { ok: true };
     }
     return handleBarDrag(payload || {});
+  }
+  if (kind === 'background:choose') {
+    // native picker; cancel leaves the current background untouched
+    const picked = await dialog.showOpenDialog(mainWin, {
+      title: 'Choose a background image',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+    });
+    if (!picked.canceled && picked.filePaths[0]) {
+      state.actions['settings:set']({ backgroundImage: picked.filePaths[0] });
+      store.flush();
+      pump();
+      return { ok: true, path: picked.filePaths[0] };
+    }
+    return { ok: false, canceled: true };
   }
   const fn = state.actions[kind];
   if (typeof fn !== 'function') return { error: `unknown kind: ${kind}` };

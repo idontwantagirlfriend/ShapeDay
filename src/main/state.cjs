@@ -128,8 +128,11 @@ function createState(store, hooks = {}) {
 
   function llmCfg() {
     const l = store.settings.llm || {};
-    // key optional for local endpoints; promptsDir routes the editable prompt files
-    return l.baseUrl && l.model ? { ...l, promptsDir: hooks.promptsDir } : null;
+    // key optional for local endpoints; prompt files resolve data-dir first,
+    // then the bundled defaults (prompts/ inside the package)
+    return l.baseUrl && l.model
+      ? { ...l, promptsDir: hooks.promptsDir, bundledDir: hooks.bundledPromptsDir }
+      : null;
   }
 
   /** AI estimation is opt-in: mode must say 'ai' AND an endpoint must exist. */
@@ -257,31 +260,61 @@ function createState(store, hooks = {}) {
     }
   }
 
-  /** Compact task context for the summarizer. */
-  function compactTasks(days) {
-    const out = [];
-    for (const d of days) {
-      for (const t of d.tasks || []) {
-        out.push({
+  /** Per-day context for the summarizer, matching prompts/summary.txt:
+   *  todos with expected and execution timespans, ids citable. */
+  function summaryDays(days, now) {
+    const s = store.settings;
+    return days.map((d) => {
+      const bounds = TimeUtil.workBounds(d.date, s.workStart, s.workEnd);
+      const endRef = d.date === TimeUtil.todayKey() ? now : Math.max(bounds.end, ...(d.tasks || []).map((t) => t.finishedAt ?? 0));
+      return {
+        date: d.date,
+        workHours: `${s.workStart}-${s.workEnd}`,
+        overworkMinutes: Math.max(0, Math.round((endRef - bounds.end) / TimeUtil.MIN)),
+        breaks: (d.breaks || []).length,
+        tasks: (d.tasks || []).map((t) => ({
+          id: t.id,
           title: t.title,
-          est: t.estimateMin,
-          act: Math.round(TimeUtil.taskElapsedMin(t, Date.now())),
+          expectedMinutes: t.estimateMin,
+          actualMinutes: Math.round(TimeUtil.taskElapsedMin(t, now)),
           status: t.status,
-        });
-      }
-    }
-    return out;
+        })),
+      };
+    });
+  }
+
+  /** The past three days' local reports, for the prompt's {history_reports}. */
+  function historyReports(now) {
+    const s = store.settings;
+    const key = TimeUtil.todayKey();
+    const pad = (x) => String(x).padStart(2, '0');
+    const from = new Date(key + 'T00:00:00');
+    from.setDate(from.getDate() - 3);
+    const fromKey = `${from.getFullYear()}-${pad(from.getMonth() + 1)}-${pad(from.getDate())}`;
+    return store
+      .daysRange(fromKey, key)
+      .filter((d) => d.date !== key && (d.tasks || []).length)
+      .slice(-3)
+      .map((d) => {
+        const local = Advisor.report([d], s);
+        return `${d.date}: ${Template.render(s.summaryTemplate || '', templateArgs(local.metrics, 'day'))}`;
+      })
+      .join('\n');
   }
 
   /** Fire-and-merge AI summary; local report renders immediately regardless. */
   function fireSummary(scope, days, local) {
     if (llmReport.inFlight[scope]) return;
     llmReport.inFlight[scope] = true;
+    const now = Date.now();
+    const daysCtx = summaryDays(days, now);
+    const idToTitle = {};
+    for (const d of daysCtx) for (const t of d.tasks) idToTitle[t.id] = t.title;
     LLM.summarize(llmCfg(), {
       scope,
-      metrics: local.metrics,
-      overworkMin: local.metrics.overworkMin,
-      tasks: compactTasks(days),
+      days: daysCtx,
+      historyReports: historyReports(now),
+      idToTitle,
     })
       .then((r) => {
         llmReport.cache[scope] = r;
@@ -480,6 +513,9 @@ function createState(store, hooks = {}) {
         if (patch && k in patch) allowed[k] = patch[k];
       }
       if (patch && 'reflogOpen' in patch) allowed.reflogOpen = !!patch.reflogOpen;
+      if (patch && typeof patch.backgroundImage === 'string') {
+        allowed.backgroundImage = patch.backgroundImage.slice(0, 400);
+      }
       if (patch && 'overlayOpacity' in patch) {
         const v = Math.round(Number(patch.overlayOpacity));
         allowed.overlayOpacity = Number.isFinite(v) ? Math.max(20, Math.min(100, v)) : 92;

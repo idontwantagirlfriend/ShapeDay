@@ -31,7 +31,14 @@ async function run({ app, getMainWin, state, windows }) {
 
   await sleep(400);
   await call('day:clear');
-  await call('settings:set', { autoAdvance: true });
+  // hermetic start: a previously crashed run may have left AI modes pointing
+  // at a dead mock endpoint, which would poison the early templated checks
+  await call('settings:set', {
+    autoAdvance: true,
+    estimatorMode: 'smart',
+    summaryMode: 'template',
+    llm: { baseUrl: '', apiKey: '', model: '' },
+  });
   check('windows created (main+bar+toast+tint)', windows.ALL.length >= 4, `${windows.ALL.length}`);
 
   // 1. list — first item auto-flags in progress, rest red
@@ -159,11 +166,35 @@ async function run({ app, getMainWin, state, windows }) {
   snap = await call('day:get');
   check('overlay opacity setting round-trips', snap.settings.overlayOpacity === 55);
 
+  // background customization: set a real file, verify cover-fit layer, clear
+  fs.writeFileSync('/tmp/shapeday-bg.png', Buffer.from(
+    '89504e470d0a1a0a0000000d494844520000000100000001080600000' +
+    '01f15c4890000000d49444154789c626001000000ffff030000060005' +
+    '57bfabd40000000049454e44ae426082', 'hex'));
+  await call('settings:set', { backgroundImage: '/tmp/shapeday-bg.png' });
+  await sleep(600);
+  const bg = await win.webContents.executeJavaScript(`(() => {
+    const l = document.getElementById('bg-layer');
+    const cs = l ? getComputedStyle(l) : null;
+    return {
+      applied: !!l && !l.hidden && (l.style.backgroundImage || '').includes('shapeday-bg.png'),
+      size: cs ? cs.backgroundSize : '-',
+      pos: cs ? cs.backgroundPosition : '-',
+    };
+  })()`);
+  check('background applied cover-fit (scale + clip, ratio kept)',
+    bg.applied && bg.size === 'cover' && bg.pos === '50% 50%', JSON.stringify(bg));
+  await call('settings:set', { backgroundImage: '' });
+  await sleep(400);
+  const bgCleared = await win.webContents.executeJavaScript('document.getElementById("bg-layer").hidden');
+  check('background clear restores the plain backdrop', bgCleared === true);
+
   // 11. the real AI estimation path, against a local mock chat/completions
   // endpoint: config -> mode -> debounce -> fetch -> parse -> apply -> event.
   // Regression: etaReviewed (set by day:clear / "Looks right") used to kill
   // refinement silently.
   const http = require('http');
+  let mockSys = '';
   const srv = http.createServer((req, res) => {
     let buf = '';
     req.on('data', (c) => (buf += c));
@@ -171,11 +202,14 @@ async function run({ app, getMainWin, state, windows }) {
       let content = '';
       try {
         const body = JSON.parse(buf);
-        if (body.messages[0].content.includes('work-health')) {
-          // summarize shape: one real-looking finding
+        if (body.messages[0].content.includes('suggestions')) {
+          // summarize shape per prompts/summary.txt: recap + cited suggestions
+          mockSys = body.messages[0].content;
+          const user = JSON.parse(body.messages.find((m) => m.role === 'user').content);
+          const cite = user.days?.[0]?.tasks?.[0]?.id || '';
           content = JSON.stringify({
-            headline: 'mock summary',
-            issues: [{ sev: 'med', text: 'mock finding', fix: 'mock fix' }],
+            recap: 'mock recap',
+            suggestions: [{ content: 'mock suggestion', cite }],
           });
         } else {
           // eta shape: 77 minutes for every asked-about task
@@ -205,9 +239,16 @@ async function run({ app, getMainWin, state, windows }) {
   // 11b. summarize through the same mock: fires, merges, event fires
   await call('settings:set', { summaryMode: 'ai' });
   await call('report:get', { scope: 'day' }); // first call triggers the async summary
-  await sleep(800);
-  let rep2 = await call('report:get', { scope: 'day' }); // second call sees the cache
-  check('AI summary merged into report', !!rep2.llm && Array.isArray(rep2.llm.issues));
+  let rep2 = null;
+  for (let i = 0; i < 10; i++) {
+    await sleep(500);
+    rep2 = await call('report:get', { scope: 'day' });
+    if (rep2.llm) break;
+  }
+  const merged = !!rep2.llm && rep2.llm.headline === 'mock recap' && Array.isArray(rep2.llm.issues) && rep2.llm.issues.length >= 1;
+  check('AI summary merged into report', merged, rep2.llm ? 'cached' : 'never merged in 5s');
+  check('suggestion cite resolved to the task title', merged && !!rep2.llm.issues[0].about);
+  check('{history_reports} interpolated, not left literal', merged && !mockSys.includes('{history_reports}'));
   const evRep = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:report")');
   check('llm:report event fired', evRep.length >= 1);
   const dbg = await win.webContents.executeJavaScript('window.__events.map(e => e.type + (e.data && e.data.error ? ":" + e.data.error : ""))');
