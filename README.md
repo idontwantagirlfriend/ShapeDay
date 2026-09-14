@@ -33,7 +33,9 @@ Any OpenAI-compatible `chat/completions` endpoint: Base URL + Model (+ key if re
 - `prompts/eta.txt` — reply contract `{"tasks":[{"id","minutes"}]}`
 - `prompts/summary.txt` — reply contract `{"recap","suggestions":[{"content","cite"}]}`; `{history_reports}` is filled with the past three days
 
-## Data
+## Data & privacy
+
+No telemetry. The app itself makes zero outbound requests and collects nothing. The only network traffic is the opt-in LLM features, and it goes solely to the endpoint you configure.
 
 One JSON file: `~/.config/ShapeDay/shapeday.json` (`%APPDATA%\ShapeDay\` on Windows). Holds the API key — never commit it. Installer updates in place and keep it.
 
