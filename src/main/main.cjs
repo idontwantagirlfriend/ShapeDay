@@ -151,20 +151,19 @@ function pump() {
 }
 
 // ---------- standardized IPC: one channel, kind-dispatched ----------
-// Manual bar dragging — handled before the state dispatch because it runs at
-// mouse-move frequency and must not trigger a state pump per event.
-const barDrag = { active: false, x: 0, y: 0, mx: 0, my: 0 };
-function handleBarDrag(p) {
-  if (!barWin || barWin.isDestroyed()) return { ok: false };
-  if (!barDrag.active) {
-    const [x, y] = barWin.getPosition();
-    barDrag.active = true;
-    barDrag.x = x;
-    barDrag.y = y;
-    barDrag.mx = p.sx;
-    barDrag.my = p.sy;
+// Manual overlay dragging (top strip, break toast) — handled before the
+// state dispatch because it runs at mouse-move frequency and must not
+// trigger a state pump per event. The sender identifies the window.
+const overlayDrags = new Map(); // webContents id -> {active, x, y, mx, my}
+function handleOverlayDrag(senderId, target, p) {
+  if (!target || target.isDestroyed()) return { ok: false };
+  let drag = overlayDrags.get(senderId);
+  if (!drag || !drag.active) {
+    const [x, y] = target.getPosition();
+    drag = { active: true, x, y, mx: p.sx, my: p.sy };
+    overlayDrags.set(senderId, drag);
   }
-  barWin.setPosition(Math.round(barDrag.x + (p.sx - barDrag.mx)), Math.round(barDrag.y + (p.sy - barDrag.my)));
+  target.setPosition(Math.round(drag.x + (p.sx - drag.mx)), Math.round(drag.y + (p.sy - drag.my)));
   return { ok: true };
 }
 
@@ -176,12 +175,20 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
     }
     return { ok: true };
   }
-  if (kind === 'bar:drag') {
+  if (kind === 'overlay:drag') {
+    const senderId = _e.sender.id;
     if (payload?.end) {
-      barDrag.active = false;
+      const drag = overlayDrags.get(senderId);
+      if (drag) drag.active = false;
       return { ok: true };
     }
-    return handleBarDrag(payload || {});
+    const target =
+      barWin && !barWin.isDestroyed() && _e.sender === barWin.webContents
+        ? barWin
+        : toastWin && !toastWin.isDestroyed() && _e.sender === toastWin.webContents
+          ? toastWin
+          : null;
+    return handleOverlayDrag(senderId, target, payload || {});
   }
   if (kind === 'background:choose') {
     // native picker; cancel leaves the current background untouched

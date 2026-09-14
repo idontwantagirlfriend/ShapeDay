@@ -54,14 +54,15 @@ function createMainWindow() {
 }
 
 function createBar() {
+  // the overarching strip: full work-area width, one narrow line at the top
   const { workArea } = screen.getPrimaryDisplay();
-  const W = 460, H = 78;
+  const H = 26;
   const win = track(
     new BrowserWindow({
-      width: W,
+      width: workArea.width,
       height: H,
-      x: workArea.x + workArea.width - W - 16,
-      y: workArea.y + 12,
+      x: workArea.x,
+      y: workArea.y,
       frame: false,
       transparent: true,
       resizable: false,

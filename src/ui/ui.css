@@ -301,11 +301,6 @@ input[type="range"] { width: 104px; accent-color: var(--accent); }
 }
 .mini-toggle input { accent-color: var(--accent); }
 
-/* overlay bar: hand-shaped cursor while dragging it around */
-.bar { cursor: grab; }
-.bar:active { cursor: grabbing; }
-.bar button, .bar .title { cursor: pointer; }
-
 .plan-tools { display: flex; gap: 8px; margin-top: 18px; align-items: center; flex-wrap: wrap; }
 .plan-tools .spacer { flex: 1; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 0.88rem; cursor: pointer; }
@@ -451,26 +446,36 @@ details.settings[open] summary { color: var(--accent); border-color: var(--accen
 html.overlay, html.overlay body { background: transparent; }
 /* Manual dragging (mousedown → IPC move): -webkit-app-region swallowed the
    hand cursor, so the bar is dragged in JS and the cursor is fully ours. */
-.bar {
+.topbar {
   width: 100%;
   height: 100vh;
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 10px 14px;
-  background: rgba(22, 24, 29, 0.92);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(22, 24, 29, 0.9);
+  border-bottom: 1px solid var(--line);
   overflow: hidden;
+  cursor: grab;
+  user-select: none;
 }
-.bar .row1 { display: flex; align-items: center; gap: 10px; }
-.bar .status-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-.bar .title { flex: 1; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar .clock { font-size: 0.92rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.bar .clock.ow { color: var(--ow-2); font-weight: 600; }
-.bar .track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
-.bar .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
-.bar .owclock { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.topbar:active { cursor: grabbing; }
+.topbar .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.topbar .headline {
+  font-size: 0.8rem;
+  color: var(--text);
+  max-width: 60%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+}
+.topbar .time {
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.topbar:hover .time { opacity: 1; }
 
 .toast {
   width: 100%; height: 100vh;
@@ -480,6 +485,9 @@ html.overlay, html.overlay body { background: transparent; }
   border: 1px solid var(--line);
   border-radius: 14px;
 }
+.toast { cursor: grab; }
+.toast:active { cursor: grabbing; }
+.toast button { cursor: pointer; }
 .toast h4 { margin: 0; font-size: 1rem; }
 .toast .sub { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
 .toast .row { display: flex; gap: 8px; margin-top: auto; }
