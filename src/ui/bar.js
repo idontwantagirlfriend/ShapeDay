@@ -67,7 +67,7 @@ shapeday.onTick((s) => {
   }
   fill.style.width = `${Math.round(s.progress.ratio * 100)}%`;
   if (s.overworkMin > 0) {
-    ow.textContent = `overwork ${fmt(s.overworkMin)} — screen tint ${Overwork.stageName(s.overworkMin)}`;
+    ow.textContent = `overwork ${fmt(s.overworkMin)}`;
     ow.style.color = Overwork.stageColor(s.overworkMin);
   } else {
     const left = Math.max(0, Math.round((s.bounds.end - s.now) / 60000));
