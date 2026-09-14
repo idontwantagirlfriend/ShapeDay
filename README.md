@@ -42,7 +42,8 @@ blue to the darkest red.
   "I list. I reset the status." loop).
 - The **reflog** below the tools row records every addition, deletion and
   status change of the day's tasks (diffed, so frontier auto-flagging and
-  break parking are logged too). Deleting is the hover-revealed ✕ on a row.
+  break parking are logged too). It's unfolded by default; the "always open"
+  checkbox in its header sets that. Deleting is the hover-revealed ✕ on a row.
 
 ### Phase Two — Visualize
 - The timeline is a burn-up: x = wall clock across your work hours,
@@ -50,7 +51,8 @@ blue to the darkest red.
   with a broken (dashed) line**; breaks and idle time flatten the line; the
   dotted line is the plan pace (workload spread evenly over the hours).
 - Progress bar in the header; a **self-evaluation prompt fires once, at 50%**
-  of the plan (ahead / on track / behind).
+  of the plan (ahead / on track / behind). Hover the chart for a crosshair
+  showing delivered progress at any moment in time.
 - **Overwork** area past work-end is tinted, escalating (also applied as a
   fullscreen tint):
   | overwork | color |
@@ -85,8 +87,8 @@ blue to the darkest red.
 ```bash
 npm install
 npm start            # dev run
-npm test             # 39 unit tests (core logic, LLM transport, modes, reflog)
-npm run test:e2e     # 25-check end-to-end driver (runs the real UI)
+npm test             # 40 unit tests (core logic, LLM transport, modes, reflog)
+npm run test:e2e     # 28-check end-to-end driver (runs the real UI)
 npm run shot         # seed a demo day, screenshot every window → shots/
 npm run assets       # (re)normalize assets — see below
 npm run llm:smoke -- <baseUrl> <model> [apiKey]   # live-test the AI backend

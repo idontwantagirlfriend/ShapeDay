@@ -71,6 +71,18 @@ test('ai modes with endpoint flip the guards', () => {
   assert.strictEqual(refine.ok, true, 'accepted in ai mode (call itself will fail offline, surfaced via event)');
 });
 
+test('overlay opacity clamps to 20..100; reflog default toggles', () => {
+  const { state } = freshState();
+  state.actions['settings:set']({ overlayOpacity: 500 });
+  let s = state.snapshot().settings;
+  assert.strictEqual(s.overlayOpacity, 100, 'clamped high');
+  state.actions['settings:set']({ overlayOpacity: 3 });
+  s = state.snapshot().settings;
+  assert.strictEqual(s.overlayOpacity, 20, 'clamped low');
+  state.actions['settings:set']({ reflogOpen: false });
+  assert.strictEqual(state.snapshot().settings.reflogOpen, false);
+});
+
 test('reflog records additions, status changes, deletions', () => {
   const { state } = freshState();
   state.actions['day:clear']();

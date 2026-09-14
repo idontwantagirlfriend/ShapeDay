@@ -16,7 +16,7 @@
   'use strict';
   const MIN = 60000;
 
-  let state = { chart: null, hover: null, tip: null };
+  let state = { chart: null, hover: null, tip: null, cursor: null };
 
   /** Cumulative earned series across all started tasks. */
   function build(day, bounds, now) {
@@ -237,6 +237,41 @@
       ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ih); ctx.stroke();
     }
 
+    // ---- hover crosshair: progress at time X ----
+    if (state.cursor && !state.tip) {
+      const t = state.cursor;
+      const { y, task } = progressAt(chart, t);
+      const x = X(t);
+      ctx.strokeStyle = 'rgba(174, 216, 252, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ih); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(x, Y(y), 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#aed8fc';
+      ctx.fill();
+      ctx.strokeStyle = '#16181d';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const ht = new Date(t);
+      const label =
+        `${String(ht.getHours()).padStart(2, '0')}:${String(ht.getMinutes()).padStart(2, '0')} · ` +
+        `${Math.round(y)}m done` +
+        (task ? ` · ${task.title.length > 26 ? task.title.slice(0, 25) + '…' : task.title}` : '');
+      ctx.font = '12px system-ui';
+      const w = ctx.measureText(label).width + 16;
+      const tx = Math.min(Math.max(x - w / 2, padL), W - padR - w);
+      const ty = padT + 6;
+      ctx.fillStyle = 'rgba(30, 33, 40, 0.97)';
+      ctx.strokeStyle = '#2c313c';
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, w, 22, 6);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e8e6e3';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, tx + 8, ty + 11);
+    }
+
     // ---- hover tooltip ----
     if (state.tip) {
       const t = state.tip;
@@ -260,7 +295,24 @@
 
   function render(canvas, day, bounds, now) {
     state.chart = build(day, bounds, now);
+    state.canvas = canvas;
     draw(canvas);
+  }
+
+  /** Delivered minutes at wall-clock time t: walk the segments, partial-rise the one under t. */
+  function progressAt(chart, t) {
+    let y = 0, task = null;
+    for (const s of chart.segs) {
+      if (s.kind === 'projected') continue;
+      if (t >= s.x1) {
+        y += s.y1 - s.y0;
+      } else if (t > s.x0) {
+        const k = (t - s.x0) / (s.x1 - s.x0 || 1);
+        y += (s.y1 - s.y0) * k;
+        if (s.kind === 'work') task = s.task;
+      }
+    }
+    return { y, task };
   }
 
   function hover(canvas, clientX, clientY) {
@@ -276,12 +328,24 @@
       const d = dx * dx + dy * dy;
       if (d < bestD) { bestD = d; best = n; }
     }
-    if (best !== state.tip) {
-      state.tip = best;
-      draw(canvas);
+    const inside = mx >= geom.padL && mx <= geom.W - geom.padR && my >= geom.padT && my <= geom.H - geom.padB;
+    if (inside) {
+      const D = chart.domain;
+      const iw = geom.W - geom.padL - geom.padR;
+      state.cursor = Math.max(D.x0, Math.min(D.x1, D.x0 + ((mx - geom.padL) / iw) * (D.x1 - D.x0)));
+    } else {
+      state.cursor = null;
     }
+    state.tip = best;
+    draw(canvas);
     canvas.style.cursor = best ? 'pointer' : 'default';
   }
 
-  window.Timeline = { render, hover };
+  function hoverEnd() {
+    state.cursor = null;
+    state.tip = null;
+    if (state.canvas) draw(state.canvas);
+  }
+
+  window.Timeline = { render, hover, hoverEnd };
 })();

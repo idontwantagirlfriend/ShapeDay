@@ -43,6 +43,10 @@ title.addEventListener('click', (e) => {
 }, true); // capture, before the focus handler
 
 shapeday.onTick((s) => {
+  // user-adjustable solidity of the overlay bar
+  const op = Math.max(0.2, Math.min(1, (s.settings.overlayOpacity ?? 92) / 100));
+  document.getElementById('bar').style.background = `rgba(22, 24, 29, ${op})`;
+
   if (s.active) {
     dot.className = 'status-dot s-yellow';
     title.textContent = s.active.title;

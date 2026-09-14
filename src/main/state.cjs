@@ -461,6 +461,11 @@ function createState(store, hooks = {}) {
       for (const k of ['workStart', 'workEnd', 'breakMinutes', 'autoAdvance', 'overlayEnabled']) {
         if (patch && k in patch) allowed[k] = patch[k];
       }
+      if (patch && 'reflogOpen' in patch) allowed.reflogOpen = !!patch.reflogOpen;
+      if (patch && 'overlayOpacity' in patch) {
+        const v = Math.round(Number(patch.overlayOpacity));
+        allowed.overlayOpacity = Number.isFinite(v) ? Math.max(20, Math.min(100, v)) : 92;
+      }
       if (patch && patch.estimatorMode) {
         allowed.estimatorMode = patch.estimatorMode === 'ai' ? 'ai' : 'smart';
       }

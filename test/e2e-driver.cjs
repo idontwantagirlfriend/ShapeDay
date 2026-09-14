@@ -143,6 +143,22 @@ async function run({ app, getMainWin, state, windows }) {
   check('day report has metrics, issues, templated headline',
     rep.metrics && Array.isArray(rep.issues) && typeof rep.templated === 'string' && rep.templated.includes('done'));
 
+  // 10. UX affordances: reflog unfolded by default + opacity control + setting round-trip
+  const ui = await win.webContents.executeJavaScript(`(() => {
+    const box = document.getElementById('reflog');
+    const slider = document.getElementById('set-ow-opacity');
+    return {
+      reflogOpen: box.hidden ? null : box.open,
+      hasOpacity: !!slider,
+      gear: document.querySelector('details.settings summary').textContent.trim(),
+    };
+  })()`);
+  check('reflog unfolded by default', ui.reflogOpen === true, JSON.stringify(ui));
+  check('overlay opacity control present, gear is bare glyph', ui.hasOpacity && ui.gear === '⚙');
+  await call('settings:set', { overlayOpacity: 55 });
+  snap = await call('day:get');
+  check('overlay opacity setting round-trips', snap.settings.overlayOpacity === 55);
+
   fs.writeFileSync('/tmp/shapeday-e2e.json', JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok);
   console.log(`e2e: ${results.length - failed.length}/${results.length} passed`);

@@ -19,16 +19,35 @@
         <summary>⚙</summary>
         <div class="settings-pop">
           <label>Work start
-            <span class="ctl"><input type="text" id="set-start" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" /><span class="help" data-help="When your work hours begin. The timeline and the overwork clock key off this.">i</span></span>
+            <span class="ctl">
+              <button class="step" data-time="set-start" data-d="-15" title="−15 min">▾</button>
+              <input type="text" id="set-start" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" />
+              <button class="step" data-time="set-start" data-d="15" title="+15 min">▴</button>
+              <span class="help" data-help="When your work hours begin — type HH:MM or use the stepper. The timeline and the overwork clock key off this.">i</span>
+            </span>
           </label>
           <label>Work end
-            <span class="ctl"><input type="text" id="set-end" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" /><span class="help" data-help="When work hours end. Past this moment the screen begins tinting — blue, then red, then darkest red.">i</span></span>
+            <span class="ctl">
+              <button class="step" data-time="set-end" data-d="-15" title="−15 min">▾</button>
+              <input type="text" id="set-end" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" />
+              <button class="step" data-time="set-end" data-d="15" title="+15 min">▴</button>
+              <span class="help" data-help="When work hours end. Past this moment the screen begins tinting — blue, then red, then darkest red.">i</span>
+            </span>
           </label>
           <label>Break length
             <span class="ctl"><input type="number" id="set-break" min="5" max="30" step="1" /><span class="help" data-help="Length of the break proposed after each finished task.">i</span></span>
           </label>
-          <label class="toggle" style="justify-content:flex-end">Auto-advance <input type="checkbox" id="set-auto" /></label>
-          <label class="toggle" style="justify-content:flex-end">Overlay <input type="checkbox" id="set-overlay" /></label>
+          <div class="toggle-row">
+            <label class="toggle">Auto-advance <input type="checkbox" id="set-auto" /></label>
+            <label class="toggle">Overlay <input type="checkbox" id="set-overlay" /></label>
+          </div>
+          <label>Overlay opacity
+            <span class="ctl">
+              <input type="range" id="set-ow-opacity" min="20" max="100" step="5" />
+              <span class="range-val" id="ow-op-val"></span>
+              <span class="help" data-help="How solid the always-on-top bar is. 100% is fully solid; low values let your desktop show through.">i</span>
+            </span>
+          </label>
           <div class="settings-sep"></div>
           <label>ETA estimation
             <span class="ctl"><select id="set-est-mode">
@@ -94,7 +113,11 @@
         </div>
 
         <details class="reflog" id="reflog" hidden>
-          <summary>Reflog <span class="count" id="reflog-count"></span></summary>
+          <summary>Reflog <span class="count" id="reflog-count"></span>
+            <label class="mini-toggle" title="Open by default on launch">always open
+              <input type="checkbox" id="reflog-open" />
+            </label>
+          </summary>
           <ul id="reflog-list"></ul>
         </details>
       </section>

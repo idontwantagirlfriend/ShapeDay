@@ -9,7 +9,6 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 let snap = null;
 let currentView = 'plan';
 let sumScope = 'day';
-let settingsTouched = false;
 const aiCache = {}; // scope → last AI summary (survives local re-renders)
 
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)}m`);
@@ -230,6 +229,11 @@ function renderReflog(day) {
   const log = day.reflog || [];
   const box = $('#reflog');
   box.hidden = log.length === 0;
+  if (reflogPref !== !!snap.settings.reflogOpen) {
+    reflogPref = !!snap.settings.reflogOpen; // default applied once, then only on setting change
+    box.open = reflogPref;
+  }
+  reflogOpenInput.checked = reflogPref;
   $('#reflog-count').textContent = log.length ? `· ${log.length}` : '';
   const ul = $('#reflog-list');
   ul.innerHTML = '';
@@ -251,7 +255,6 @@ function renderReflog(day) {
 }
 
 $('#plan-auto').addEventListener('change', (e) => {
-  settingsTouched = true;
   shapeday.call('settings:set', { autoAdvance: e.target.checked });
 });
 
@@ -269,6 +272,7 @@ function renderViz(force) {
   ow.style.color = snap.overworkMin > 0 ? Overwork.stageColor(snap.overworkMin) : '';
 }
 $('#timeline').addEventListener('mousemove', (e) => Timeline.hover($('#timeline'), e.clientX, e.clientY));
+$('#timeline').addEventListener('mouseleave', () => Timeline.hoverEnd());
 
 // ---------- summarize ----------
 $$('.sum-scopes button').forEach((b) =>
@@ -380,7 +384,6 @@ const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/; // 24-hour, always — no locale surp
 function bindSetting(id, key, parse) {
   const el = $(id);
   el.addEventListener('change', () => {
-    settingsTouched = true;
     shapeday.call('settings:set', { [key]: parse(el.value) });
   });
 }
@@ -393,28 +396,54 @@ for (const [id, key] of [['#set-start', 'workStart'], ['#set-end', 'workEnd']]) 
       el.title = '24-hour HH:MM, e.g. 09:00';
       return;
     }
-    settingsTouched = true;
     shapeday.call('settings:set', { [key]: v });
   });
 }
 bindSetting('#set-break', 'breakMinutes', (v) => Math.max(5, Math.min(30, +v || 10)));
-$('#set-auto').addEventListener('change', (e) => { settingsTouched = true; shapeday.call('settings:set', { autoAdvance: e.target.checked }); });
-$('#set-overlay').addEventListener('change', (e) => { settingsTouched = true; shapeday.call('settings:set', { overlayEnabled: e.target.checked }); });
+$('#set-auto').addEventListener('change', (e) => shapeday.call('settings:set', { autoAdvance: e.target.checked }));
+$('#set-overlay').addEventListener('change', (e) => shapeday.call('settings:set', { overlayEnabled: e.target.checked }));
 
 // ---------- estimation / summary modes ----------
 $('#set-est-mode').addEventListener('change', (e) => {
-  settingsTouched = true;
   shapeday.call('settings:set', { estimatorMode: e.target.value });
 });
 $('#set-sum-mode').addEventListener('change', (e) => {
-  settingsTouched = true;
   shapeday.call('settings:set', { summaryMode: e.target.value });
   loadReport();
 });
 $('#set-sum-template').addEventListener('change', (e) => {
-  settingsTouched = true;
   shapeday.call('settings:set', { summaryTemplate: e.target.value });
   loadReport();
+});
+
+// ---------- 24h time steppers (scroller + direct type-in) ----------
+for (const btn of $$('.step[data-time]')) {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.time === 'set-start' ? 'workStart' : 'workEnd';
+    const el = $('#' + btn.dataset.time);
+    let m = TimeUtil.parseHM(el.value);
+    if (m == null) m = TimeUtil.parseHM(snap.settings[key]) ?? 9 * 60;
+    m = (((m + Number(btn.dataset.d)) % 1440) + 1440) % 1440;
+    const v = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    el.value = v;
+    shapeday.call('settings:set', { [key]: v });
+  });
+}
+
+// ---------- overlay opacity ----------
+$('#set-ow-opacity').addEventListener('input', (e) => {
+  $('#ow-op-val').textContent = `${e.target.value}%`;
+  shapeday.call('settings:set', { overlayOpacity: +e.target.value });
+});
+
+// ---------- reflog: unfolded by default, toggleable ----------
+let reflogPref = null; // applied on first render, then only when the setting changes
+const reflogOpenInput = $('#reflog-open');
+reflogOpenInput.addEventListener('click', (e) => e.stopPropagation()); // don't fold the details
+reflogOpenInput.addEventListener('change', (e) => {
+  shapeday.call('settings:set', { reflogOpen: e.target.checked });
+  reflogPref = e.target.checked;
+  $('#reflog').open = e.target.checked;
 });
 
 // ---------- LLM (OpenAI-compatible chat/completions; user-configured) ----------
@@ -425,7 +454,6 @@ const llmPatch = () => ({
 });
 for (const id of ['#set-llm-url', '#set-llm-key', '#set-llm-model']) {
   $(id).addEventListener('change', () => {
-    settingsTouched = true;
     shapeday.call('settings:set', { llm: llmPatch() });
   });
 }
@@ -468,19 +496,25 @@ function etaModeLabel(s) {
 }
 
 function renderSettings() {
-  if (settingsTouched) return; // don't fight the user mid-edit
   const s = snap.settings;
-  $('#set-start').value = s.workStart;
-  $('#set-end').value = s.workEnd;
-  $('#set-break').value = s.breakMinutes;
+  // never overwrite a field the user is editing — the 1 Hz re-render used to
+  // reset typed digits (the "settings reset themselves" bug)
+  const put = (sel, v) => { const el = $(sel); if (document.activeElement !== el) el.value = v; };
+  put('#set-start', s.workStart);
+  put('#set-end', s.workEnd);
+  put('#set-break', s.breakMinutes);
+  put('#set-est-mode', s.estimatorMode === 'ai' ? 'ai' : 'smart');
+  put('#set-sum-mode', s.summaryMode === 'ai' ? 'ai' : 'template');
+  put('#set-sum-template', s.summaryTemplate || '');
+  put('#set-llm-url', s.llm?.baseUrl || '');
+  put('#set-llm-key', s.llm?.apiKey || '');
+  put('#set-llm-model', s.llm?.model || '');
+  put('#set-ow-opacity', s.overlayOpacity ?? 92);
+  if (document.activeElement !== $('#set-ow-opacity')) {
+    $('#ow-op-val').textContent = `${s.overlayOpacity ?? 92}%`;
+  }
   $('#set-auto').checked = s.autoAdvance !== false;
   $('#set-overlay').checked = s.overlayEnabled !== false;
-  $('#set-est-mode').value = s.estimatorMode === 'ai' ? 'ai' : 'smart';
-  $('#set-sum-mode').value = s.summaryMode === 'ai' ? 'ai' : 'template';
-  $('#set-sum-template').value = s.summaryTemplate || '';
-  $('#set-llm-url').value = s.llm?.baseUrl || '';
-  $('#set-llm-key').value = s.llm?.apiKey || '';
-  $('#set-llm-model').value = s.llm?.model || '';
   $('#eta-ai').hidden = !(s.estimatorMode === 'ai' && llmConfigured(s));
   const tag = $('#eta-mode');
   if (tag) tag.textContent = etaModeLabel(s);
