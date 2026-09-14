@@ -283,7 +283,8 @@ function createState(store, hooks = {}) {
     });
   }
 
-  /** The past three days' local reports, for the prompt's {history_reports}. */
+  /** The past three days' summaries, for the daily prompt's {history_reports}.
+   *  Persisted AI recaps when present; the local template line as fallback. */
   function historyReports(now) {
     const s = store.settings;
     const key = TimeUtil.todayKey();
@@ -296,14 +297,62 @@ function createState(store, hooks = {}) {
       .filter((d) => d.date !== key && (d.tasks || []).length)
       .slice(-3)
       .map((d) => {
+        const persisted = store.summary(d.date);
+        if (persisted?.recap) return `${d.date}: ${persisted.recap.replace(/\s+/g, ' ').slice(0, 300)}`;
         const local = Advisor.report([d], s);
         return `${d.date}: ${Template.render(s.summaryTemplate || '', templateArgs(local.metrics, 'day'))}`;
       })
       .join('\n');
   }
 
+  // ---------- summary scopes: day / week / month / year ----------
+
+  const pad2 = (x) => String(x).padStart(2, '0');
+
+  /** '2026-09-14' | '2026-W37' | '2026-09' | '2026' */
+  function periodKeyFor(scope, dateKey) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    if (scope === 'day') return dateKey;
+    if (scope === 'month') return `${y}-${pad2(m)}`;
+    if (scope === 'year') return String(y);
+    // ISO week, Monday-based
+    const dt = new Date(y, m - 1, d);
+    const dayNum = (dt.getDay() + 6) % 7;
+    dt.setDate(dt.getDate() - dayNum + 3);
+    const firstThursday = new Date(dt.getFullYear(), 0, 4);
+    const week = 1 + Math.round(((dt - firstThursday) / 86400000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
+    return `${dt.getFullYear()}-W${pad2(week)}`;
+  }
+
+  /** Days in the period containing dateKey (day: just it; week: Mon..Sun). */
+  function daysForScope(scope, dateKey) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const pad = pad2;
+    if (scope === 'day') {
+      const day = store.day(dateKey);
+      return day ? [day] : [];
+    }
+    let fromKey, toKey;
+    if (scope === 'week') {
+      const dt = new Date(y, m - 1, d);
+      const dow = (dt.getDay() + 6) % 7;
+      dt.setDate(dt.getDate() - dow);
+      fromKey = periodKeyFor('day', `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`);
+      toKey = dateKey; // days up to today (future days have no data anyway)
+    } else if (scope === 'month') {
+      fromKey = `${y}-${pad(m)}-01`;
+      toKey = dateKey;
+    } else if (scope === 'year') {
+      fromKey = `${y}-01-01`;
+      toKey = dateKey;
+    } else {
+      return [];
+    }
+    return store.daysRange(fromKey, toKey);
+  }
+
   /** Fire-and-merge AI summary; local report renders immediately regardless. */
-  function fireSummary(scope, days, local) {
+  function fireSummary(scope, days) {
     if (llmReport.inFlight[scope]) return;
     llmReport.inFlight[scope] = true;
     const now = Date.now();
@@ -319,6 +368,13 @@ function createState(store, hooks = {}) {
       .then((r) => {
         llmReport.cache[scope] = r;
         llmReport.cacheMut = llmReport.mut;
+        // one definitive summary per period, latest wins
+        store.putSummary(periodKeyFor(scope, TimeUtil.todayKey()), {
+          at: now,
+          scope,
+          recap: r.headline,
+          suggestions: r.issues.map((i) => ({ content: i.text, about: i.about || i.fix || '' })),
+        });
         emit('llm:report', { scope, report: r });
         onDirty();
       })
@@ -550,18 +606,9 @@ function createState(store, hooks = {}) {
     'report:get': ({ scope }) => {
       const s = store.settings;
       const key = TimeUtil.todayKey();
-      let days;
-      if (scope === 'week' || scope === '30d') {
-        const n = scope === 'week' ? 6 : 29;
-        const from = new Date(key + 'T00:00:00');
-        from.setDate(from.getDate() - n);
-        const pad = (x) => String(x).padStart(2, '0');
-        const fromKey = `${from.getFullYear()}-${pad(from.getMonth() + 1)}-${pad(from.getDate())}`;
-        days = store.daysRange(fromKey, key);
-      } else {
-        days = [store.day(key)].filter(Boolean);
-      }
+      const days = daysForScope(scope, key);
       const local = Advisor.report(days, s);
+      local.persisted = store.summary(periodKeyFor(scope, key)); // one definitive summary, latest wins
       if (store.settings.summaryMode === 'ai' && llmCfg()) {
         if (llmReport.cache[scope] && llmReport.cacheMut === llmReport.mut) {
           local.llm = llmReport.cache[scope];
@@ -629,6 +676,7 @@ function createState(store, hooks = {}) {
           workEnd: bounds.end,
           overworkMin: Math.max(0, Math.round((endRef - bounds.end) / TimeUtil.MIN)),
           breaks: (d.breaks || []).length,
+          summary: store.summary(d.date)?.recap || '',
           tasks: (d.tasks || []).map((t) => ({
             title: t.title,
             status: t.status,
@@ -639,7 +687,8 @@ function createState(store, hooks = {}) {
           })),
         };
       });
-      return { scope, fromKey: keyOf(from), toKey: keyOf(to), todayKey: key, days };
+      const periodSummary = store.summary(periodKeyFor(scope, key))?.recap || '';
+      return { scope, fromKey: keyOf(from), toKey: keyOf(to), todayKey: key, periodSummary, days };
     },
   };
 

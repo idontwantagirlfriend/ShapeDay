@@ -46,7 +46,7 @@ try {
   }
   const sha256 = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
   const shaText = (t) => crypto.createHash('sha256').update(t).digest('hex');
-  for (const name of ['eta.txt', 'summary.txt']) {
+  for (const name of ['eta.txt', 'daily_summary.txt', 'weekly_summary.txt', 'monthly_summary.txt', 'yearly_summary.txt']) {
     const base = name.replace('.txt', '');
     const dest = path.join(PROMPTS_DIR, name);
     const src = path.join(__dirname, '..', '..', 'prompts', name);

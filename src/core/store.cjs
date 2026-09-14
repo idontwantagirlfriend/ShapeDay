@@ -31,6 +31,9 @@
       llm: { baseUrl: '', apiKey: '', model: '' }, // user-supplied, OpenAI-compatible
     },
     days: {},
+    // one definitive summary per period, latest wins:
+    // '2026-09-14' | '2026-W37' | '2026-09' | '2026' → {at, recap, suggestions}
+    summaries: {},
   };
 
   function open(filePath) {
@@ -65,6 +68,13 @@
       },
       day(dateKey) {
         return state.days[dateKey] || null;
+      },
+      summary(periodKey) {
+        return state.summaries?.[periodKey] || null;
+      },
+      putSummary(periodKey, summary) {
+        (state.summaries || (state.summaries = {}))[periodKey] = summary;
+        schedule();
       },
       /** Get-or-create the day, then persist the result of mutate(day). */
       updateDay(dateKey, mutate) {

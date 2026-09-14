@@ -291,6 +291,12 @@ async function run({ app, getMainWin, state, windows }) {
     vizWeek.days.length >= 1 && vizWeek.days.some((d) => d.date === snap.date) && vizWeek.toKey >= vizWeek.todayKey);
   check('viz:days month spans the 1st..today+',
     vizMonth.days.length >= 1 && vizMonth.fromKey.endsWith('-01') && vizMonth.days.some((d) => d.date === snap.date));
+  check('viz:days carries per-day and period summaries',
+    typeof vizWeek.days[0].summary === 'string' && 'periodSummary' in vizWeek);
+  const repMonth = await call('report:get', { scope: 'month' });
+  const repYear = await call('report:get', { scope: 'year' });
+  check('month and year report scopes work',
+    repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');
 
   fs.writeFileSync('/tmp/shapeday-e2e.json', JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok);

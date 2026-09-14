@@ -52,6 +52,17 @@ async function run({ app, getMainWin, store, state, windows }) {
   const past = new Date(now - 70 * MIN);
   const pad = (n) => String(n).padStart(2, '0');
   store.setSettings({ workEnd: `${pad(past.getHours())}:${pad(past.getMinutes())}` });
+  // planted summaries so the week view's summary cells are visible
+  const key = state.snapshot().date;
+  store.putSummary(key, { at: now, scope: 'day', recap: 'Focused morning, overran the boundary by an hour.', suggestions: [] });
+  store.putSummary(key.slice(0, 7), { at: now, scope: 'month', recap: 'Steady month with recurring overwork.', suggestions: [] });
+  // ISO week key (same algorithm as state.periodKeyFor)
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() - (dt.getDay() + 6) % 7 + 3);
+  const ft = new Date(dt.getFullYear(), 0, 4);
+  const wk = 1 + Math.round(((dt - ft) / 86400000 - 3 + ((ft.getDay() + 6) % 7)) / 7);
+  store.putSummary(`${dt.getFullYear()}-W${String(wk).padStart(2, '0')}`, { at: now, scope: 'week', recap: 'Long week; boundary discipline slipped twice.', suggestions: [] });
   store.flush();
 
   const main = getMainWin();
@@ -84,6 +95,16 @@ async function run({ app, getMainWin, store, state, windows }) {
   await main.webContents.executeJavaScript(`document.querySelector('[data-viz=week]').click(), true`);
   await sleep(500);
   await shot(main, 'week.png');
+  const ws = await main.webContents.executeJavaScript(`(() => {
+    const box = document.getElementById('week-summaries');
+    return {
+      visible: box && !box.hidden,
+      cells: box ? box.querySelectorAll('.cell').length : 0,
+      todayHasSummary: box ? [...box.querySelectorAll('.cell')].some(c => c.textContent.includes('Focused morning')) : false,
+      weekHasSummary: box ? box.querySelector('.week-cell').textContent.includes('Long week') : false,
+    };
+  })()`);
+  console.log('WEEK-DOM:', JSON.stringify(ws));
   await main.webContents.executeJavaScript(`document.querySelector('[data-viz=month]').click(), true`);
   await sleep(500);
   await shot(main, 'month.png');

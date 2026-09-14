@@ -288,19 +288,143 @@ async function renderViz(force) {
     vizFetchedAt = Date.now();
     if (!vizData || vizData.scope !== vizScope) return; // scope switched mid-fetch
   }
-  if (vizScope === 'week') Timeline.renderWeek(canvas, vizData);
-  else Timeline.renderMonth(canvas, vizData);
+  if (vizScope === 'week') {
+    Timeline.renderWeek(canvas, vizData);
+    renderWeekSummaries(vizData);
+  } else {
+    Timeline.renderMonth(canvas, vizData);
+    renderWeekSummaries(null);
+  }
 }
 
 $$('.viz-scopes button').forEach((b) =>
   b.addEventListener('click', () => {
     vizScope = b.dataset.viz;
     $$('.viz-scopes button').forEach((x) => x.classList.toggle('active', x === b));
+    hideVizBubble();
     renderViz(true);
   })
 );
-$('#timeline').addEventListener('mousemove', (e) => Timeline.hover($('#timeline'), e.clientX, e.clientY));
-$('#timeline').addEventListener('mouseleave', () => Timeline.hoverEnd());
+
+// day: crosshair hover. month: day-cell hover bubble. week: hover does nothing.
+$('#timeline').addEventListener('mousemove', (e) => {
+  const canvas = $('#timeline');
+  if (vizScope === 'day') {
+    Timeline.hover(canvas, e.clientX, e.clientY);
+  } else if (vizScope === 'month') {
+    const hit = Timeline.hitTest(canvas, e.clientX, e.clientY);
+    if (hit?.kind === 'day' && (hit.tasks.length || hit.summary)) {
+      showMonthBubble(hit, e);
+    } else {
+      hideVizBubble();
+    }
+  }
+});
+$('#timeline').addEventListener('mouseleave', () => {
+  Timeline.hoverEnd();
+  if (vizScope === 'month') hideVizBubble();
+});
+
+// week: click a task block for its description and times
+$('#timeline').addEventListener('click', (e) => {
+  if (vizScope !== 'week') return;
+  const hit = Timeline.hitTest($('#timeline'), e.clientX, e.clientY);
+  if (hit?.kind === 'task') showWeekTaskBubble(hit, e);
+  else hideVizBubble();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideVizBubble();
+});
+
+// ---------- viz bubbles ----------
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function placeBubble(bubble, e) {
+  const wrap = document.querySelector('.viz-wrap');
+  const r = wrap.getBoundingClientRect();
+  let x = e.clientX - r.left + 14;
+  let y = e.clientY - r.top + 14;
+  if (x + 340 > r.width) x = Math.max(0, r.width - 350);
+  if (y + 180 > r.height) y = Math.max(0, y - 190);
+  bubble.style.left = `${x}px`;
+  bubble.style.top = `${y}px`;
+}
+
+function hideVizBubble() {
+  $('#viz-bubble').hidden = true;
+}
+
+function taskSubHtml(t) {
+  const start = t.startedAt ? fmtClock(t.startedAt) : '—';
+  const end = t.finishedAt ? fmtClock(t.finishedAt) : '—';
+  return `<span class="dot s-${t.status}"></span>${escapeHtml(t.title)}` +
+    `<span class="sub"><b>${escapeHtml(t.title)}</b><br>${start} → ${end}<br>est ${fmtMin(t.estimateMin)} · worked ${fmtMin(t.elapsedMin)}<br>status: ${t.status}</span>`;
+}
+
+function showWeekTaskBubble(hit, e) {
+  const bubble = $('#viz-bubble');
+  const start = hit.startedAt ? fmtClock(hit.startedAt) : '—';
+  const end = hit.finishedAt ? fmtClock(hit.finishedAt) : 'running';
+  bubble.innerHTML =
+    `<h5>${escapeHtml(hit.title)}</h5>` +
+    `<div class="meta">${hit.date}</div>` +
+    `<div>${start} → ${end}</div>` +
+    `<div class="meta">est ${fmtMin(hit.estimateMin)} · worked ${fmtMin(hit.elapsedMin)} · ${hit.status}</div>`;
+  bubble.hidden = false;
+  placeBubble(bubble, e);
+}
+
+function showMonthBubble(hit, e) {
+  const bubble = $('#viz-bubble');
+  const rows = hit.tasks
+    .map((t) => `<div class="taskline">${taskSubHtml(t)}</div>`)
+    .join('');
+  const sum = hit.summary ? `<div class="sumline">${escapeHtml(hit.summary)}</div>` : '';
+  bubble.innerHTML =
+    `<h5>${Number(hit.date.slice(8))} · ${hit.tasks.length} task(s)</h5>` + rows + sum;
+  bubble.hidden = false;
+  placeBubble(bubble, e);
+}
+
+function escapeHtml(x) {
+  return String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// ---------- week summary cells (per day) + weekly summary ----------
+function renderWeekSummaries(data) {
+  const box = $('#week-summaries');
+  if (!data || vizScope !== 'week') {
+    box.hidden = true;
+    return;
+  }
+  const byKey = new Map(data.days.map((d) => [d.date, d]));
+  const cells = [];
+  const cur = new Date(data.fromKey + 'T00:00:00');
+  let idx = 0;
+  while (keyOf(cur) <= data.toKey) {
+    const date = keyOf(cur);
+    const d = byKey.get(date);
+    const text = d?.summary || '';
+    cells.push(
+      `<div class="cell ${text ? '' : 'empty'}">` +
+        `<div class="day-label">${DOW[idx]} ${date.slice(8)}</div>` +
+        (text ? `${escapeHtml(text.slice(0, 120))}<div class="preview">${escapeHtml(text)}</div>` : 'no summary') +
+        `</div>`
+    );
+    cur.setDate(cur.getDate() + 1);
+    idx++;
+  }
+  const week = data.periodSummary
+    ? `<b>Week summary</b><br>${escapeHtml(data.periodSummary)}<div class="preview">${escapeHtml(data.periodSummary)}</div>`
+    : 'no weekly summary yet';
+  box.innerHTML = `<div class="cells">${cells.join('')}</div><div class="week-cell ${data.periodSummary ? '' : 'empty'}">${week}</div>`;
+  box.hidden = false;
+}
+
+function keyOf(d) {
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 // ---------- summarize ----------
 $$('.sum-scopes button').forEach((b) =>

@@ -149,6 +149,8 @@
             <button data-viz="month">Month</button>
           </div>
           <canvas id="timeline" height="380"></canvas>
+          <div id="viz-bubble" class="viz-bubble" hidden></div>
+          <div id="week-summaries" class="week-summaries" hidden></div>
           <div class="legend">
             <span><i class="sw sw-work"></i>working (broken line)</span>
             <span><i class="sw sw-flat"></i>break / idle (flat)</span>
@@ -170,7 +172,8 @@
         <div class="sum-scopes">
           <button data-scope="day" class="active">Day</button>
           <button data-scope="week">Week</button>
-          <button data-scope="30d">Past 30 days</button>
+          <button data-scope="month">Month</button>
+          <button data-scope="year">Year</button>
         </div>
         <div class="metrics" id="sum-metrics"></div>
         <div class="issues" id="sum-issues"></div>

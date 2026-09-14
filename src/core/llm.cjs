@@ -28,6 +28,14 @@ const INLINE_PROMPTS = {
   eta: 'Estimate minutes per task. Reply ONLY with JSON: {"tasks":[{"id":"...","minutes":N}]}',
   summary:
     'Reply ONLY with JSON: {"recap":"...","suggestions":[{"content":"...","cite":"task_id"}]}',
+  daily_summary:
+    'Reply ONLY with JSON: {"recap":"...","suggestions":[{"content":"...","cite":"task_id"}]}',
+  weekly_summary:
+    'Reply ONLY with JSON: {"recap":"...","suggestions":[{"content":"...","cite":"task_id"}]}',
+  monthly_summary:
+    'Reply ONLY with JSON: {"recap":"...","suggestions":[{"content":"...","cite":"task_id"}]}',
+  yearly_summary:
+    'Reply ONLY with JSON: {"recap":"...","suggestions":[{"content":"...","cite":"task_id"}]}',
 };
 
 function readPromptFile(dir, name) {
@@ -160,17 +168,25 @@ async function refineEtas(cfg, ctx) {
 }
 
 /**
- * Summarize. ctx: {scope, days:[{date, workHours, overworkMinutes, breaks,
- * tasks:[{id,title,expectedMinutes,actualMinutes,status}]}], historyReports,
- * idToTitle} → {headline, issues:[{sev,text,about?,fix?}]}.
+ * Summarize. ctx: {scope, days or months payload, historyReports, idToTitle}
+ * → {headline, issues:[{sev,text,about?,fix?}]}. The prompt file is chosen
+ * per scope: daily_summary / weekly_summary / monthly_summary / yearly_summary.
  *
- * Reply formats accepted (the prompt file is user-owned):
- *   - {recap, suggestions:[{content, cite}]}   (prompts/summary.txt contract)
+ * Reply formats accepted (the prompt files are user-owned):
+ *   - {recap, suggestions:[{content, cite}]}   (the current prompt contract)
  *   - {headline, issues:[{sev,text,fix}]}      (older JSON shape)
  *   - prose                                    (rendered as the headline)
  */
+const SCOPE_PROMPTS = {
+  day: 'daily_summary',
+  week: 'weekly_summary',
+  month: 'monthly_summary',
+  year: 'yearly_summary',
+};
+
 async function summarize(cfg, ctx) {
-  const systemPrompt = loadPrompt(cfg, 'summary').replace(
+  const promptName = SCOPE_PROMPTS[ctx.scope] || 'daily_summary';
+  const systemPrompt = loadPrompt(cfg, promptName).replace(
     '{history_reports}',
     () => (ctx.historyReports && ctx.historyReports.trim() ? ctx.historyReports : 'none yet')
   );

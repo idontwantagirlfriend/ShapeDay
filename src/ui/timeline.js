@@ -16,7 +16,7 @@
   'use strict';
   const MIN = 60000;
 
-  let state = { chart: null, hover: null, tip: null, cursor: null };
+  let state = { chart: null, hover: null, tip: null, cursor: null, mode: 'day' };
 
   /** Cumulative earned series across all started tasks. */
   function build(day, bounds, now) {
@@ -294,9 +294,25 @@
   }
 
   function render(canvas, day, bounds, now) {
+    state.mode = 'day';
+    canvas._hits = null;
     state.chart = build(day, bounds, now);
     state.canvas = canvas;
     draw(canvas);
+  }
+
+  /** Canvas-local hit test against the rects recorded by week/month renderers. */
+  function hitTest(canvas, clientX, clientY) {
+    const hits = canvas._hits;
+    if (!hits) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    for (let i = hits.length - 1; i >= 0; i--) {
+      const h = hits[i];
+      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) return h;
+    }
+    return null;
   }
 
   /** Delivered minutes at wall-clock time t: walk the segments, partial-rise the one under t. */
@@ -316,6 +332,7 @@
   }
 
   function hover(canvas, clientX, clientY) {
+    if (state.mode !== 'day') return; // week/month have their own interactions
     const chart = state.chart;
     const geom = canvas._geom;
     if (!chart || !geom) return;
@@ -379,6 +396,8 @@
   }
 
   function renderWeek(canvas, data) {
+    state.mode = 'week';
+    const hits = [];
     const { ctx, W, H } = prepCanvas(canvas);
     ctx.clearRect(0, 0, W, H);
     const byKey = new Map(data.days.map((d) => [d.date, d]));
@@ -443,13 +462,21 @@
       let cursor = startMin;
       for (const t of d.tasks) {
         const bh = Math.max(3, t.estimateMin * scale - 2);
+        const by = yOf(cursor) + 1;
         ctx.fillStyle = taskFill(t.status);
-        ctx.fillRect(x + 5, yOf(cursor) + 1, colW - 10, bh);
+        ctx.fillRect(x + 5, by, colW - 10, bh);
         if (bh >= 15 && colW > 46) {
           ctx.fillStyle = 'rgba(10, 12, 16, 0.85)';
           ctx.textAlign = 'left';
           ctx.fillText(t.title.slice(0, Math.floor((colW - 14) / 5.4)), x + 8, yOf(cursor) + 4);
         }
+        hits.push({
+          kind: 'task',
+          x: x + 5, y: by, w: colW - 10, h: bh,
+          date, title: t.title, status: t.status,
+          startedAt: t.startedAt, finishedAt: t.finishedAt,
+          estimateMin: t.estimateMin, elapsedMin: t.elapsedMin,
+        });
         cursor += t.estimateMin;
       }
 
@@ -457,9 +484,12 @@
       ctx.strokeStyle = isToday ? 'rgba(174, 216, 252, 0.55)' : 'rgba(44, 49, 60, 0.9)';
       ctx.strokeRect(x + 2.5, padT - 0.5, colW - 5, plotH + 1);
     });
+    canvas._hits = hits;
   }
 
   function renderMonth(canvas, data) {
+    state.mode = 'month';
+    const hits = [];
     const { ctx, W, H } = prepCanvas(canvas, 420);
     ctx.clearRect(0, 0, W, H);
     const byKey = new Map(data.days.map((d) => [d.date, d]));
