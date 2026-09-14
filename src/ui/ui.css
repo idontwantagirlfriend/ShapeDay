@@ -19,6 +19,9 @@
 }
 
 * { box-sizing: border-box; }
+/* author display rules (flex, grid…) beat the UA [hidden] rule; keep the
+   attribute authoritative everywhere */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -595,8 +598,10 @@ html.overlay, html.overlay body { background: transparent; }
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow: hidden;
+  cursor: grab;
   user-select: none;
 }
+.floater:active { cursor: grabbing; }
 .floater .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .floater .headline { flex: 1; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .floater .clock { font-size: 0.92rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }

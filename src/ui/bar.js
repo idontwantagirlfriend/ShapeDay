@@ -6,8 +6,8 @@
  * steals clicks from other apps' bars. The strip's whole background doubles
  * as the day-progress bar.
  *
- * floater: the rounded capsule only — dot, headline, clock. Dragging is
- * grip-only here too (⋯ at the end).
+ * floater: the rounded capsule only — dot, headline, clock. Draggable
+ * anywhere on the capsule.
  */
 'use strict';
 
@@ -35,11 +35,15 @@ function headlineText(s) {
 }
 
 let currentStyle = null;
+// top strip only: mirror of the window's mouse policy, so redundant
+// toggles don't spam IPC. Main applies the base policy in applyBarStyle.
+let interactive = false;
 
 shapeday.onTick((s) => {
   const style = s.settings.overlayStyle === 'floater' ? 'fl' : 'top';
   if (style !== currentStyle) {
     currentStyle = style;
+    interactive = false;
     els.top.bar.hidden = style !== 'top';
     els.fl.bar.hidden = style !== 'fl';
   }
@@ -70,8 +74,8 @@ shapeday.onTick((s) => {
 
 // ---------- top strip: click-through except the grip ----------
 // The window ignores the mouse (forwarding moves); hovering the grip turns
-// interactivity on, leaving it turns it off. The grip is the drag anchor.
-let interactive = false;
+// interactivity on, leaving the window turns it off. The grip is the drag
+// anchor. The floater stays interactive, so its capsule can be dragged.
 function setInteractive(on) {
   if (on === interactive) return;
   interactive = on;
@@ -83,14 +87,19 @@ document.addEventListener('mousemove', (e) => {
   const inside = e.clientX >= r.left - 6 && e.clientX <= r.right + 6 && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4;
   setInteractive(inside);
 });
+// crossing the window edge sends no further mousemove, so restore
+// click-through here or the strip would keep eating clicks
+document.addEventListener('mouseout', (e) => {
+  if (!e.relatedTarget) setInteractive(false);
+});
 
-// ---------- dragging (both styles; top only from the grip) ----------
+// ---------- dragging (strip: grip only; floater: anywhere) ----------
 let drag = null;
 document.addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) return;
-  // both styles drag from their grip only
-  const grip = currentStyle === 'top' ? '.strip-grip' : '.fl-grip';
-  if (!e.target.closest(grip)) return;
+  const fromFloater = !els.fl.bar.hidden && !!e.target.closest('.floater');
+  const fromGrip = !!e.target.closest('.strip-grip');
+  if (!fromFloater && !fromGrip) return;
   drag = { sx: e.screenX, sy: e.screenY };
 });
 document.addEventListener('mousemove', (e) => {

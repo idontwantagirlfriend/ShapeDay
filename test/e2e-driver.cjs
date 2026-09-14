@@ -180,6 +180,8 @@ async function run({ app, getMainWin, state, windows }) {
 
   // overlay style switch: top strip ↔ floater geometry follows
   const barWin = windows.ALL.find((w) => w.webContents.getURL().includes('bar.html'));
+  await call('settings:set', { overlayStyle: 'top' });
+  await sleep(600);
   const topBounds = barWin.getBounds();
   await call('settings:set', { overlayStyle: 'floater' });
   await sleep(600);
@@ -187,10 +189,102 @@ async function run({ app, getMainWin, state, windows }) {
   check('overlay style switches strip → floater geometry',
     topBounds.width > 1000 && topBounds.height === 26 && flBounds.width === 460 && flBounds.height === 78,
     `${topBounds.width}x${topBounds.height} → ${flBounds.width}x${flBounds.height}`);
+  const flShown = await barWin.webContents.executeJavaScript(`({
+    top: getComputedStyle(document.getElementById('topbar')).display,
+    fl: getComputedStyle(document.getElementById('floater')).display,
+  })`);
+  check('floater mode actually shows the floater (hidden wins over display)',
+    flShown.top === 'none' && flShown.fl !== 'none', JSON.stringify(flShown));
   await call('settings:set', { overlayStyle: 'top' });
   await sleep(600);
   const backBounds = barWin.getBounds();
   check('overlay style returns to strip geometry', backBounds.width > 1000 && backBounds.height === 26);
+  const topShown = await barWin.webContents.executeJavaScript(`({
+    top: getComputedStyle(document.getElementById('topbar')).display,
+    fl: getComputedStyle(document.getElementById('floater')).display,
+  })`);
+  check('top mode actually shows the strip',
+    topShown.top !== 'none' && topShown.fl === 'none', JSON.stringify(topShown));
+
+  // overlay mouse policy: the strip is interactive only while the cursor is
+  // over its grip, the floater never goes click-through
+  const policy = [];
+  const realIgnore = barWin.setIgnoreMouseEvents.bind(barWin);
+  barWin.setIgnoreMouseEvents = (ignore, opts) => {
+    policy.push(ignore ? 'ignore' : 'accept');
+    return realIgnore(ignore, opts);
+  };
+  const hover = async (sel) => {
+    await barWin.webContents.executeJavaScript(`(() => {
+      const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+      }));
+      return true;
+    })()`);
+    await sleep(200);
+  };
+  policy.length = 0;
+  await hover('#strip-grip');
+  const gripAccepted = policy.includes('accept');
+  policy.length = 0;
+  await barWin.webContents.executeJavaScript('document.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })), true');
+  await sleep(200);
+  const leftIgnored = policy.includes('ignore');
+  check('strip accepts the mouse only while over the grip',
+    gripAccepted && leftIgnored, `accept=${gripAccepted} leave=${leftIgnored}`);
+
+  // floater: draggable from anywhere on the capsule, and stale interactivity
+  // toggles must not turn it click-through
+  await call('settings:set', { overlayStyle: 'floater' });
+  await sleep(600);
+  const flPos = barWin.getPosition();
+  await barWin.webContents.executeJavaScript(`(() => {
+    const fl = document.getElementById('floater');
+    fl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 640, screenY: 300 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, screenX: 680, screenY: 330 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, screenX: 720, screenY: 360 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(300);
+  const flMoved = barWin.getPosition();
+  check('floater drags from anywhere on the capsule',
+    flMoved[0] === flPos[0] + 40 && flMoved[1] === flPos[1] + 30, `${flPos} → ${flMoved}`);
+  policy.length = 0;
+  await barWin.webContents.executeJavaScript('shapeday.call("overlay:setInteractive", { on: false })');
+  await sleep(200);
+  check('floater ignores stale interactivity toggles',
+    !policy.includes('ignore'), JSON.stringify(policy));
+
+  // strip: still drags from the grip, but not from its background
+  await call('settings:set', { overlayStyle: 'top' });
+  await sleep(600);
+  const topPos = barWin.getPosition();
+  await barWin.webContents.executeJavaScript(`(() => {
+    const g = document.getElementById('strip-grip');
+    g.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 800, screenY: 10 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, screenX: 820, screenY: 20 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, screenX: 840, screenY: 30 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(300);
+  const topMoved = barWin.getPosition();
+  check('strip still drags from the grip',
+    topMoved[0] === topPos[0] + 20 && topMoved[1] === topPos[1] + 10, `${topPos} → ${topMoved}`);
+  const bgPos = barWin.getPosition();
+  await barWin.webContents.executeJavaScript(`(() => {
+    document.getElementById('top-headline').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 300, screenY: 10 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, screenX: 340, screenY: 30 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(200);
+  const bgMoved = barWin.getPosition();
+  check('strip background does not drag',
+    bgMoved[0] === bgPos[0] && bgMoved[1] === bgPos[1], `${bgPos} → ${bgMoved}`);
+  windows.applyBarStyle(barWin, 'top');
 
   // background customization: set a real file, verify cover-fit layer, clear
   fs.writeFileSync('/tmp/shapeday-bg.png', Buffer.from(

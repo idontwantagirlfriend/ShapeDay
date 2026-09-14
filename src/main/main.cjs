@@ -183,9 +183,12 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
     return { ok: true };
   }
   if (kind === 'overlay:setInteractive') {
-    // top strip: click-through until the renderer says the cursor hit the grip
+    // top strip: click-through until the renderer says the cursor hit the
+    // grip. The floater is always interactive, so a toggle that was in flight
+    // when the style changed must not make it click-through.
     if (barWin && !barWin.isDestroyed() && _e.sender === barWin.webContents) {
-      barWin.setIgnoreMouseEvents(!payload?.on, { forward: true });
+      if (lastBarStyle === 'floater') barWin.setIgnoreMouseEvents(false);
+      else barWin.setIgnoreMouseEvents(!payload?.on, { forward: true });
     }
     return { ok: true };
   }
