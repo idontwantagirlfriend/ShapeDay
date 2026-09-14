@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" class="overlay">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>ShapeDay break</title>
+  <link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+  <div class="toast">
+    <h4 id="headline">Task done 🎉</h4>
+    <p class="sub" id="sub">Ten minutes off makes the next one faster.</p>
+    <div id="propose">
+      <div class="row">
+        <button class="primary" id="accept">Take a 10-min break</button>
+        <button id="skip">Skip — keep going</button>
+      </div>
+    </div>
+    <div id="active" hidden>
+      <div class="countdown" id="countdown">10:00</div>
+      <div class="row">
+        <button id="end">Back to work</button>
+      </div>
+    </div>
+  </div>
+  <script src="break.js"></script>
+</body>
+</html>
