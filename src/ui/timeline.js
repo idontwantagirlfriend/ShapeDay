@@ -347,5 +347,190 @@
     if (state.canvas) draw(state.canvas);
   }
 
-  window.Timeline = { render, hover, hoverEnd };
+  // ---------- week / month grids ----------
+  // overwork threshold for the calendar views: a day counts as overworked
+  // from 30 minutes past its work end (PROJECT.md's first tint boundary)
+  const OVERWORK_THRESHOLD_MIN = 30;
+
+  function keyOf(d) {
+    const p = (x) => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  function prepCanvas(canvas, h = 380) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.clientWidth || 900;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W, H: h };
+  }
+
+  /** Fill color for a task block by status. */
+  function taskFill(status) {
+    return {
+      green: 'rgba(97, 179, 97, 0.75)',
+      yellow: 'rgba(217, 164, 65, 0.8)',
+      paused: 'rgba(174, 216, 252, 0.55)',
+      red: 'rgba(224, 101, 90, 0.28)',
+      white: 'rgba(216, 216, 216, 0.18)',
+    }[status] || 'rgba(255, 255, 255, 0.1)';
+  }
+
+  function renderWeek(canvas, data) {
+    const { ctx, W, H } = prepCanvas(canvas);
+    ctx.clearRect(0, 0, W, H);
+    const byKey = new Map(data.days.map((d) => [d.date, d]));
+    const dates = [];
+    const cur = new Date(data.fromKey + 'T00:00:00');
+    while (keyOf(cur) <= data.toKey) {
+      dates.push(keyOf(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    // shared time-of-day domain (minutes from midnight)
+    let m0 = Infinity, m1 = -Infinity;
+    for (const d of data.days) {
+      const start = (d.workStart - new Date(d.date + 'T00:00:00').getTime()) / 60000;
+      const end = (d.workEnd - new Date(d.date + 'T00:00:00').getTime()) / 60000;
+      m0 = Math.min(m0, start);
+      m1 = Math.max(m1, end + d.overworkMin);
+    }
+    if (!isFinite(m0)) { m0 = 8 * 60; m1 = 18 * 60; }
+    m0 = Math.max(0, m0 - 30);
+    m1 += 30;
+
+    const padT = 34, padB = 10;
+    const colW = W / dates.length;
+    const plotH = H - padT - padB;
+    const yOf = (m) => padT + ((m - m0) / (m1 - m0)) * plotH;
+    const scale = plotH / (m1 - m0);
+
+    ctx.font = '11px system-ui';
+    ctx.textBaseline = 'top';
+    dates.forEach((date, i) => {
+      const x = i * colW;
+      const d = byKey.get(date);
+      const dayNum = Number(date.slice(8));
+      const isToday = date === data.todayKey;
+
+      // header
+      ctx.fillStyle = isToday ? '#aed8fc' : '#9aa1ad';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Mon Tue Wed Thu Fri Sat Sun`.split(' ')[i] + ` ${dayNum}`, x + colW / 2, 8);
+
+      if (!d) {
+        // future day in this week: grayed out
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.fillRect(x + 3, padT, colW - 6, plotH);
+        return;
+      }
+      const startMin = (d.workStart - new Date(date + 'T00:00:00').getTime()) / 60000;
+      const endMin = (d.workEnd - new Date(date + 'T00:00:00').getTime()) / 60000;
+
+      // work-hours band
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.045)';
+      ctx.fillRect(x + 3, yOf(startMin), colW - 6, yOf(endMin) - yOf(startMin));
+
+      // overtime region past work end: darkest red tint
+      if (d.overworkMin > 0) {
+        ctx.fillStyle = 'rgba(128, 61, 58, 0.5)';
+        ctx.fillRect(x + 3, yOf(endMin), colW - 6, d.overworkMin * scale);
+      }
+
+      // task blocks stacked from work start, height = planned minutes
+      let cursor = startMin;
+      for (const t of d.tasks) {
+        const bh = Math.max(3, t.estimateMin * scale - 2);
+        ctx.fillStyle = taskFill(t.status);
+        ctx.fillRect(x + 5, yOf(cursor) + 1, colW - 10, bh);
+        if (bh >= 15 && colW > 46) {
+          ctx.fillStyle = 'rgba(10, 12, 16, 0.85)';
+          ctx.textAlign = 'left';
+          ctx.fillText(t.title.slice(0, Math.floor((colW - 14) / 5.4)), x + 8, yOf(cursor) + 4);
+        }
+        cursor += t.estimateMin;
+      }
+
+      // column frame
+      ctx.strokeStyle = isToday ? 'rgba(174, 216, 252, 0.55)' : 'rgba(44, 49, 60, 0.9)';
+      ctx.strokeRect(x + 2.5, padT - 0.5, colW - 5, plotH + 1);
+    });
+  }
+
+  function renderMonth(canvas, data) {
+    const { ctx, W, H } = prepCanvas(canvas, 420);
+    ctx.clearRect(0, 0, W, H);
+    const byKey = new Map(data.days.map((d) => [d.date, d]));
+    const first = new Date(data.fromKey + 'T00:00:00');
+    const lead = (first.getDay() + 6) % 7; // blanks before the 1st, Monday-first
+    const daysInMonth = Number(data.toKey.slice(8)); // toKey is the month's last day
+    const total = lead + daysInMonth;
+    const rows = Math.ceil(total / 7);
+    const padT = 24, gap = 6;
+    const cellW = (W - gap * 8) / 7;
+    const cellH = (H - padT - gap * (rows + 1)) / rows;
+
+    ctx.font = '11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach((d, i) => {
+      ctx.fillStyle = '#9aa1ad';
+      ctx.fillText(d, gap + cellW * (i + 0.5), 12);
+    });
+
+    let cell = 0;
+    const cursorDate = new Date(first);
+    for (let i = 0; i < lead; i++) cell++; // leading blanks
+    while (keyOf(cursorDate) <= data.toKey) {
+      const date = keyOf(cursorDate);
+      const col = cell % 7, row = Math.floor(cell / 7);
+      const x = gap + cellW * col, y = padT + gap + (cellH + gap) * row;
+      const d = byKey.get(date);
+      const isToday = date === data.todayKey;
+      const dayNum = Number(date.slice(8));
+
+      if (!d || d.tasks.length === 0) {
+        ctx.fillStyle = '#1a1d24'; // not there yet / no activity: grayed out
+        ctx.strokeStyle = 'rgba(44, 49, 60, 0.9)';
+      } else if (d.overworkMin >= OVERWORK_THRESHOLD_MIN) {
+        ctx.fillStyle = 'rgba(128, 61, 58, 0.85)'; // overwork: red
+        ctx.strokeStyle = 'rgba(128, 61, 58, 1)';
+      } else {
+        ctx.fillStyle = 'rgba(97, 179, 97, 0.55)'; // worked, no real overwork: green
+        ctx.strokeStyle = 'rgba(97, 179, 97, 0.9)';
+      }
+      ctx.beginPath();
+      ctx.roundRect(x, y, cellW, cellH, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      if (isToday) {
+        ctx.strokeStyle = '#aed8fc';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(x - 1, y - 1, cellW + 2, cellH + 2, 9);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = d && d.tasks.length ? 'rgba(10, 12, 16, 0.9)' : '#9aa1ad';
+      ctx.fillText(String(dayNum), x + 8, y + 12);
+      if (d && d.overworkMin >= OVERWORK_THRESHOLD_MIN) {
+        ctx.fillStyle = 'rgba(255, 235, 235, 0.95)';
+        ctx.fillText(`+${Math.round(d.overworkMin)}m over`, x + 8, y + cellH - 12);
+      } else if (d && d.tasks.length) {
+        const done = d.tasks.filter((t) => t.status === 'green').length;
+        ctx.fillStyle = 'rgba(10, 12, 16, 0.75)';
+        ctx.fillText(`${done}/${d.tasks.length}`, x + 8, y + cellH - 12);
+      }
+      ctx.textAlign = 'center';
+      cell++;
+      cursorDate.setDate(cursorDate.getDate() + 1);
+    }
+  }
+
+  window.Timeline = { render, hover, hoverEnd, renderWeek, renderMonth };
 })();

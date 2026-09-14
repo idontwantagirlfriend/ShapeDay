@@ -177,7 +177,13 @@ async function summarize(cfg, ctx) {
     { role: 'user', content: user },
   ]);
   const out = extractJson(reply);
-  if (!out || !Array.isArray(out.issues)) throw new Error('LLM summary reply unparseable');
+  if (!out || !Array.isArray(out.issues)) {
+    // the prompt file is user-owned: if the model answered in prose instead
+    // of JSON, show the prose as the headline rather than failing
+    const prose = String(reply || '').trim();
+    if (prose) return { headline: prose.slice(0, 200), issues: [] };
+    throw new Error('LLM summary reply unparseable');
+  }
   const SEV = new Set(['high', 'med', 'low', 'ok']);
   return {
     headline: String(out.headline || '').slice(0, 120),

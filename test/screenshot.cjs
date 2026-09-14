@@ -78,6 +78,16 @@ async function run({ app, getMainWin, store, state, windows }) {
   await sleep(500);
   await shot(main, 'summarize.png');
 
+  // Week + month grids
+  await main.webContents.executeJavaScript(`document.querySelector('[data-view=viz]').click(), true`);
+  await sleep(300);
+  await main.webContents.executeJavaScript(`document.querySelector('[data-viz=week]').click(), true`);
+  await sleep(500);
+  await shot(main, 'week.png');
+  await main.webContents.executeJavaScript(`document.querySelector('[data-viz=month]').click(), true`);
+  await sleep(500);
+  await shot(main, 'month.png');
+
   // Overlay windows: bar + tint
   for (const w of windows.ALL) {
     const url = w.webContents.getURL();

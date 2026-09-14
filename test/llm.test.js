@@ -180,6 +180,17 @@ test('testConnection round-trips and reports latency', async () => {
   }
 });
 
+test('summarize falls back to prose when the reply is not JSON', async () => {
+  const { srv, url } = await mockServer(() => ({ content: 'Recap: steady day. 1. sleep 2. walk 3. plan less.' }));
+  try {
+    const out = await LLM.summarize({ ...CFG, baseUrl: url }, { scope: 'day', metrics: {}, tasks: [] });
+    assert.strictEqual(out.headline.includes('Recap: steady day'), true);
+    assert.strictEqual(out.issues.length, 0);
+  } finally {
+    srv.close();
+  }
+});
+
 test('system prompts load from editable files; missing file falls back', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapeday-prompts-'));
   fs.writeFileSync(path.join(dir, 'eta.txt'), 'CUSTOM ETA PROMPT');

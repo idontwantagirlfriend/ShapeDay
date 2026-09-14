@@ -168,13 +168,22 @@ async function run({ app, getMainWin, state, windows }) {
     let buf = '';
     req.on('data', (c) => (buf += c));
     req.on('end', () => {
-      let ids = [];
+      let content = '';
       try {
         const body = JSON.parse(buf);
-        const user = body.messages.find((m) => m.role === 'user');
-        ids = (JSON.parse(user.content).tasks || []).map((t) => t.id);
+        if (body.messages[0].content.includes('work-health')) {
+          // summarize shape: one real-looking finding
+          content = JSON.stringify({
+            headline: 'mock summary',
+            issues: [{ sev: 'med', text: 'mock finding', fix: 'mock fix' }],
+          });
+        } else {
+          // eta shape: 77 minutes for every asked-about task
+          const user = body.messages.find((m) => m.role === 'user');
+          const ids = (JSON.parse(user.content).tasks || []).map((t) => t.id);
+          content = JSON.stringify({ tasks: ids.map((id) => ({ id, minutes: 77 })) });
+        }
       } catch {}
-      const content = JSON.stringify({ tasks: ids.map((id) => ({ id, minutes: 77 })) });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ choices: [{ message: { content } }] }));
     });
@@ -192,10 +201,29 @@ async function run({ app, getMainWin, state, windows }) {
   check('AI refinement reopens the review after approval', snap.day.etaReviewed === false);
   const evLLM = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:etas")');
   check('llm:etas event surfaced', evLLM.length >= 1);
+
+  // 11b. summarize through the same mock: fires, merges, event fires
+  await call('settings:set', { summaryMode: 'ai' });
+  await call('report:get', { scope: 'day' }); // first call triggers the async summary
+  await sleep(800);
+  let rep2 = await call('report:get', { scope: 'day' }); // second call sees the cache
+  check('AI summary merged into report', !!rep2.llm && Array.isArray(rep2.llm.issues));
+  const evRep = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:report")');
+  check('llm:report event fired', evRep.length >= 1);
+  const dbg = await win.webContents.executeJavaScript('window.__events.map(e => e.type + (e.data && e.data.error ? ":" + e.data.error : ""))');
+  console.log('EVENTS:', JSON.stringify(dbg));
   srv.close();
 
-  // leave AI mode off for any later steps
-  await call('settings:set', { estimatorMode: 'smart', llm: { baseUrl: '', model: '', apiKey: '' } });
+  // leave AI off for any later steps
+  await call('settings:set', { estimatorMode: 'smart', summaryMode: 'template', llm: { baseUrl: '', model: '', apiKey: '' } });
+
+  // 11c. week/month grid data: calendar week contains today, entries carry overwork
+  const vizWeek = await call('viz:days', { scope: 'week' });
+  const vizMonth = await call('viz:days', { scope: 'month' });
+  check('viz:days week spans Mon..Sun incl. today',
+    vizWeek.days.length >= 1 && vizWeek.days.some((d) => d.date === snap.date) && vizWeek.toKey >= vizWeek.todayKey);
+  check('viz:days month spans the 1st..today+',
+    vizMonth.days.length >= 1 && vizMonth.fromKey.endsWith('-01') && vizMonth.days.some((d) => d.date === snap.date));
 
   fs.writeFileSync('/tmp/shapeday-e2e.json', JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok);

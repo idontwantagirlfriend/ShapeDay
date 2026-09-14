@@ -10,6 +10,7 @@ let snap = null;
 let currentView = 'plan';
 let sumScope = 'day';
 const aiCache = {}; // scope → last AI summary (survives local re-renders)
+let sumError = null; // last summarize backend error, surfaced in the Summarize view
 
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)}m`);
 const fmtClock = (ms) => {
@@ -259,18 +260,45 @@ $('#plan-auto').addEventListener('change', (e) => {
 });
 
 // ---------- visualize ----------
-function renderViz(force) {
+let vizScope = 'day';
+let vizData = null; // last fetched {scope, days, ...} for week/month
+let vizFetchedAt = 0;
+const VIZ_TTL = 15000; // refetch week/month data at most every 15s
+
+async function renderViz(force) {
   if (!snap) return;
-  Timeline.render($('#timeline'), snap.day, snap.bounds, snap.now);
-  const done = snap.day.tasks.filter((t) => t.status === 'green').length;
-  const total = snap.day.tasks.length;
-  $('#st-done').textContent = `${done}/${total}`;
-  $('#st-est').textContent = `${fmtMin(snap.progress.done)} / ${fmtMin(snap.progress.total)}`;
-  $('#st-breaks').textContent = String((snap.day.breaks || []).length);
-  const ow = $('#st-ow');
-  ow.textContent = snap.overworkMin > 0 ? fmtMin(snap.overworkMin) : '—';
-  ow.style.color = snap.overworkMin > 0 ? Overwork.stageColor(snap.overworkMin) : '';
+  const canvas = $('#timeline');
+  const dayOnly = document.querySelectorAll('.viz-stats, .legend');
+  if (vizScope === 'day') {
+    dayOnly.forEach((el) => (el.style.display = ''));
+    Timeline.render(canvas, snap.day, snap.bounds, snap.now);
+    const done = snap.day.tasks.filter((t) => t.status === 'green').length;
+    $('#st-done').textContent = `${done}/${snap.day.tasks.length}`;
+    $('#st-est').textContent = `${fmtMin(snap.progress.done)} / ${fmtMin(snap.progress.total)}`;
+    $('#st-breaks').textContent = String((snap.day.breaks || []).length);
+    const ow = $('#st-ow');
+    ow.textContent = snap.overworkMin > 0 ? fmtMin(snap.overworkMin) : '—';
+    ow.style.color = snap.overworkMin > 0 ? Overwork.stageColor(snap.overworkMin) : '';
+    return;
+  }
+
+  dayOnly.forEach((el) => (el.style.display = 'none'));
+  if (force || !vizData || vizData.scope !== vizScope || Date.now() - vizFetchedAt > VIZ_TTL) {
+    vizData = await shapeday.call('viz:days', { scope: vizScope });
+    vizFetchedAt = Date.now();
+    if (!vizData || vizData.scope !== vizScope) return; // scope switched mid-fetch
+  }
+  if (vizScope === 'week') Timeline.renderWeek(canvas, vizData);
+  else Timeline.renderMonth(canvas, vizData);
 }
+
+$$('.viz-scopes button').forEach((b) =>
+  b.addEventListener('click', () => {
+    vizScope = b.dataset.viz;
+    $$('.viz-scopes button').forEach((x) => x.classList.toggle('active', x === b));
+    renderViz(true);
+  })
+);
 $('#timeline').addEventListener('mousemove', (e) => Timeline.hover($('#timeline'), e.clientX, e.clientY));
 $('#timeline').addEventListener('mouseleave', () => Timeline.hoverEnd());
 
@@ -335,11 +363,13 @@ async function loadReport() {
 
   const source = document.createElement('div');
   source.className = 'issue-source';
-  source.textContent = ai
-    ? `AI · ${snap.settings.llm.model}`
-    : aiMode
-      ? 'AI thinking…' // fired async; the llm:report event re-renders
-      : 'templated text · findings from local rules';
+  source.textContent = sumError
+    ? `AI error: ${sumError}`
+    : ai
+      ? `AI · ${snap.settings.llm.model}`
+      : aiMode
+        ? 'AI thinking…' // fired async; the llm:report event re-renders
+        : 'templated text · findings from local rules';
   issues.appendChild(source);
   const list = ai ? ai.issues : r.issues;
   for (const i of list) {
@@ -478,12 +508,18 @@ shapeday.onEvent((ev) => {
     st.className = 'llm-status ok';
   }
   if (ev.type === 'llm:status' && !ev.data.ok) {
+    if (ev.data.where === 'report') {
+      sumError = ev.data.error; // shown where it happened: the Summarize view
+      if (currentView === 'sum') loadReport();
+      return;
+    }
     if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
     st.textContent = `AI unreachable (${ev.data.where}): ${ev.data.error}`;
     st.className = 'llm-status err';
   }
   if (ev.type === 'llm:report' && currentView === 'sum' && ev.data.scope === sumScope) {
+    sumError = null;
     loadReport(); // merge the AI issues into the view
   }
 });

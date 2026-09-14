@@ -201,11 +201,25 @@ function createState(store, hooks = {}) {
     if (etaDebounce.timer.unref) etaDebounce.timer.unref();
   }
 
-  async function runEtaRefinement() {
+  async function runEtaRefinement(manual = false) {
     if (etaDebounce.inFlight || !estimatorUsesAI()) return;
     const day = today();
-    const candidates = day.tasks.filter((t) => t.status === 'red' && !t.estEdited);
-    if (!candidates.length) return;
+    // anything unfinished that the human has not hand-edited is fair game:
+    // the frontier keeps one task yellow, so red-only would often match nothing
+    const candidates = day.tasks.filter(
+      (t) => t.status !== 'green' && t.status !== 'white' && !t.estEdited
+    );
+    if (!candidates.length) {
+      if (manual) {
+        emit('llm:status', {
+          ok: false,
+          where: 'etas',
+          error: 'nothing to refine: every task is done, hung, or hand-edited',
+        });
+        onDirty();
+      }
+      return;
+    }
     etaDebounce.inFlight = true;
     try {
       const updates = await LLM.refineEtas(llmCfg(), {
@@ -221,7 +235,7 @@ function createState(store, hooks = {}) {
       let applied = 0;
       for (const u of updates) {
         const t = Model.findTask(day, u.id);
-        if (t && t.status === 'red' && !t.estEdited) {
+        if (t && t.status !== 'green' && t.status !== 'white' && !t.estEdited) {
           t.estimateMin = u.minutes;
           applied++;
         }
@@ -535,8 +549,55 @@ function createState(store, hooks = {}) {
       if (!estimatorUsesAI()) {
         return { ok: false, reason: 'estimation is in smart-reading mode' };
       }
-      runEtaRefinement();
+      runEtaRefinement(true);
       return { ok: true };
+    },
+
+    /**
+     * Per-day summaries for the Visualize week/month grids. Week = the
+     * current calendar week (Mon..Sun), month = the current calendar month;
+     * future days simply have no entry and render grayed out.
+     */
+    'viz:days': ({ scope }) => {
+      const s = store.settings;
+      const key = TimeUtil.todayKey();
+      const today = new Date(key + 'T00:00:00');
+      const pad = (x) => String(x).padStart(2, '0');
+      const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const from = new Date(today);
+      if (scope === 'month') {
+        from.setDate(1);
+      } else {
+        const dow = (today.getDay() + 6) % 7; // Monday = 0
+        from.setDate(from.getDate() - dow);
+      }
+      const to = scope === 'month' ? new Date(today.getFullYear(), today.getMonth() + 1, 0) : (() => {
+        const sun = new Date(today);
+        sun.setDate(sun.getDate() + (6 - ((today.getDay() + 6) % 7)));
+        return sun;
+      })();
+      const now = Date.now();
+      const days = store.daysRange(keyOf(from), keyOf(to)).map((d) => {
+        const bounds = TimeUtil.workBounds(d.date, s.workStart, s.workEnd);
+        // overwork: today runs live to `now`; past days end at their last finish stamp
+        const endRef = d.date === key ? now : Math.max(bounds.end, ...d.tasks.map((t) => t.finishedAt ?? 0));
+        return {
+          date: d.date,
+          workStart: bounds.start,
+          workEnd: bounds.end,
+          overworkMin: Math.max(0, Math.round((endRef - bounds.end) / TimeUtil.MIN)),
+          breaks: (d.breaks || []).length,
+          tasks: (d.tasks || []).map((t) => ({
+            title: t.title,
+            status: t.status,
+            estimateMin: t.estimateMin,
+            elapsedMin: Math.round(TimeUtil.taskElapsedMin(t, now)),
+            startedAt: t.startedAt,
+            finishedAt: t.finishedAt,
+          })),
+        };
+      });
+      return { scope, fromKey: keyOf(from), toKey: keyOf(to), todayKey: key, days };
     },
   };
 

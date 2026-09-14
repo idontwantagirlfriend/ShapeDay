@@ -16,8 +16,9 @@ blue to the darkest red.
   instant ETA from **smart reading** (the local algorithm: keyword buckets ×
   your personal bias factor — see Settings to see which reading is active).
   Switch ETA estimation to **AI estimation** in ⚙ Settings and, with an
-  endpoint configured, a debounced batch call re-estimates everything you
-  haven't started or hand-edited — your ± overrides always win. Confirm with
+  endpoint configured, AI re-estimates every unfinished, un-hand-edited task
+  (debounced after listing, or on demand via "Refine with AI") — your ±
+  overrides always win, and any AI change reopens the review. Confirm with
   "Looks right".
 - **Left click on the current task = finish** — one gesture marks it
   **green** and proposes a 10-minute break. **Left click on another task =
@@ -53,6 +54,10 @@ blue to the darkest red.
 - Progress bar in the header; a **self-evaluation prompt fires once, at 50%**
   of the plan (ahead / on track / behind). Hover the chart for a crosshair
   showing delivered progress at any moment in time.
+- **Week** view: a column per day, tasks as blocks (colored by status), the
+  overtime region tinted darkest red. **Month** view: a calendar where a day
+  is green (worked, overtime < 30 min), red (overtime >= 30 min) or gray
+  (no activity / not there yet).
 - **Overwork** area past work-end is tinted, escalating (also applied as a
   fullscreen tint):
   | overwork | color |
@@ -87,8 +92,8 @@ blue to the darkest red.
 ```bash
 npm install
 npm start            # dev run
-npm test             # 41 unit tests (core logic, LLM transport + prompts, modes, reflog)
-npm run test:e2e     # 31-check end-to-end driver (runs the real UI)
+npm test             # 42 unit tests (core logic, LLM transport + prompts, modes, reflog)
+npm run test:e2e     # 35-check end-to-end driver (runs the real UI)
 npm run shot         # seed a demo day, screenshot every window → shots/
 npm run assets       # (re)normalize assets — see below
 npm run llm:smoke -- <baseUrl> <model> [apiKey]   # live-test the AI backend
