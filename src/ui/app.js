@@ -376,8 +376,8 @@ async function loadReport() {
     const el = document.createElement('div');
     el.className = 'issue';
     el.innerHTML = `<span class="sev ${i.sev}"></span><div class="body"><div class="text"></div><div class="fix"></div></div>`;
-    el.querySelector('.text').textContent = i.text;
-    el.querySelector('.fix').textContent = i.fix;
+    el.querySelector('.text').textContent = i.about ? `${i.text}  ·  ${i.about}` : i.text;
+    el.querySelector('.fix').textContent = i.fix || '';
     issues.appendChild(el);
   }
 
@@ -459,6 +459,10 @@ for (const btn of $$('.step[data-time]')) {
     shapeday.call('settings:set', { [key]: v });
   });
 }
+
+// ---------- background customization ----------
+$('#bg-choose').addEventListener('click', () => shapeday.call('background:choose'));
+$('#bg-clear').addEventListener('click', () => shapeday.call('settings:set', { backgroundImage: '' }));
 
 // ---------- overlay opacity ----------
 $('#set-ow-opacity').addEventListener('input', (e) => {
@@ -555,6 +559,18 @@ function renderSettings() {
   }
   $('#set-auto').checked = s.autoAdvance !== false;
   $('#set-overlay').checked = s.overlayEnabled !== false;
+  // background: cover-fit under the scrim; a missing file just falls back to plain
+  const bgPath = s.backgroundImage || '';
+  const bgLayer = $('#bg-layer');
+  if (bgPath) {
+    bgLayer.hidden = false;
+    bgLayer.style.backgroundImage = `url("file://${bgPath.replace(/\\/g, '/').replace(/"/g, '%22')}")`;
+  } else {
+    bgLayer.hidden = true;
+    bgLayer.style.backgroundImage = '';
+  }
+  const bgName = $('#bg-name');
+  if (bgName) bgName.textContent = bgPath ? bgPath.split(/[\\/]/).pop() : 'none';
   $('#eta-ai').hidden = !(s.estimatorMode === 'ai' && llmConfigured(s));
   const tag = $('#eta-mode');
   if (tag) tag.textContent = etaModeLabel(s);

@@ -21,6 +21,7 @@
       overlayEnabled: true,
       overlayOpacity: 92, // % — the always-on-top bar's background
       reflogOpen: true, // unfold the plan-tab reflog by default
+      backgroundImage: '', // absolute path; rendered cover-fit (scaled, clipped, ratio kept)
       // AI is opt-in per feature, never intrusive:
       estimatorMode: 'smart',   // 'smart' (local keyword+bias reading) | 'ai'
       summaryMode: 'template',  // 'template' (mustache) | 'ai'

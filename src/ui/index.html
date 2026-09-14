@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:" />
   <title>ShapeDay</title>
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
+  <div id="bg-layer" hidden></div>
   <div id="app">
     <header>
       <div class="brand">Shape<span>Day</span></div>
@@ -46,6 +47,14 @@
               <input type="range" id="set-ow-opacity" min="20" max="100" step="5" />
               <span class="range-val" id="ow-op-val"></span>
               <span class="help" data-help="How solid the always-on-top bar is. 100% is fully solid; low values let your desktop show through.">i</span>
+            </span>
+          </label>
+          <label>Background
+            <span class="ctl">
+              <button id="bg-choose" class="mini-btn">Choose…</button>
+              <button id="bg-clear" class="mini-btn" title="Remove the background image">✕</button>
+              <span class="range-val" id="bg-name" style="max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+              <span class="help" data-help="Your image is drawn cover-fit: scaled and clipped to fill the window, aspect ratio kept, never stretched. A dark scrim keeps text readable.">i</span>
             </span>
           </label>
           <div class="settings-sep"></div>

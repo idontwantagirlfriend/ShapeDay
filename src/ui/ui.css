@@ -30,6 +30,24 @@ html, body {
   user-select: none;
 }
 
+/* user background: cover-fit (scaled + clipped, ratio kept) under a scrim */
+#bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+#bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(22, 24, 29, 0.82), rgba(22, 24, 29, 0.92));
+}
+#app { position: relative; z-index: 1; }
+.mini-btn { padding: 5px 10px; font-size: 0.8rem; }
+
 button {
   font: inherit;
   color: inherit;

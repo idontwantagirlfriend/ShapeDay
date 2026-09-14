@@ -92,8 +92,8 @@ blue to the darkest red.
 ```bash
 npm install
 npm start            # dev run
-npm test             # 42 unit tests (core logic, LLM transport + prompts, modes, reflog)
-npm run test:e2e     # 35-check end-to-end driver (runs the real UI)
+npm test             # 43 unit tests (core logic, LLM transport + prompts, modes, reflog)
+npm run test:e2e     # 39-check end-to-end driver (runs the real UI)
 npm run shot         # seed a demo day, screenshot every window → shots/
 npm run assets       # (re)normalize assets — see below
 npm run llm:smoke -- <baseUrl> <model> [apiKey]   # live-test the AI backend
@@ -160,8 +160,9 @@ Model (+ API key if the provider needs one) and hit **Test**. The key lives
 in the local `shapeday.json`.
 
 **The prompts are yours to edit.** They are plain text files in the data
-dir, seeded from bundled defaults on first run and re-read on every request
-(edits apply on the next call, no restart):
+dir, re-read on every request (edits apply on the next call, no restart).
+Bundled defaults seed them; when a bundled default changes, copies the user
+hasn't edited refresh automatically — an edited copy always wins:
 
 - `prompts/eta.txt` — the ETA estimation system prompt
 - `prompts/summary.txt` — the summary system prompt
