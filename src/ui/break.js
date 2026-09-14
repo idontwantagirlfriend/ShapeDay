@@ -27,6 +27,23 @@ document.getElementById('accept').addEventListener('click', () => {
   shapeday.call('break:respond', { accept: true });
   show('counting');
 });
+
+// the toast is an overlay, not a notification: grab anywhere (buttons
+// excluded) and drag it out of the way
+let dragState = null;
+document.querySelector('.toast').addEventListener('mousedown', (e) => {
+  if (e.target.closest('button')) return;
+  dragState = { sx: e.screenX, sy: e.screenY };
+});
+document.addEventListener('mousemove', (e) => {
+  if (dragState && (e.screenX !== dragState.sx || e.screenY !== dragState.sy)) {
+    shapeday.call('overlay:drag', { sx: e.screenX, sy: e.screenY });
+  }
+});
+document.addEventListener('mouseup', () => {
+  if (dragState) shapeday.call('overlay:drag', { end: true });
+  dragState = null;
+});
 document.getElementById('skip').addEventListener('click', () => {
   shapeday.call('break:respond', { accept: false });
 });

@@ -7,16 +7,12 @@
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
-  <div class="bar" id="bar" title="ShapeDay — click the tray for the app">
-    <div class="row1">
-      <span class="status-dot" id="dot"></span>
-      <span class="title" id="title">no task on</span>
-      <span class="clock" id="clock"></span>
-    </div>
-    <div class="track"><div class="fill" id="fill" style="width:0%"></div></div>
-    <div class="owclock" id="ow"></div>
+  <div class="topbar" id="bar">
+    <span class="dot" id="dot"></span>
+    <span class="headline" id="headline">no task on</span>
+    <span class="time" id="time"></span>
   </div>
-  <script src="../core/overwork.cjs"></script>
+  <script src="../core/timeutil.cjs"></script>
   <script src="bar.js"></script>
 </body>
 </html>

@@ -62,14 +62,14 @@ const HINT_AUTO = {
   red: 'click → make current',
   yellow: 'current · click → finish',
   paused: 'on break · click → resume',
-  green: 'right-click → reopen',
+  green: 'click → reopen',
   white: 'click → revive (unfinished)',
 };
 const HINT_MANUAL = {
   red: 'click → start',
   yellow: 'click → finish',
   paused: 'on break · click → resume',
-  green: 'right-click → reopen',
+  green: 'click → reopen',
   white: 'click → revive (unfinished)',
 };
 

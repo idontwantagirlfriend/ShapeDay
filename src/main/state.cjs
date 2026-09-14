@@ -360,7 +360,8 @@ function createState(store, hooks = {}) {
       let r;
       logged(day, () => {
         if (autoMode()) {
-          if (!t || t.status === 'green') r = { event: null };
+          if (!t) r = { event: null };
+          else if (t.status === 'green') r = Model.reopenTask(day, id); // click a finished task → back live
           else if (t.status === 'white') r = { changed: Model.requeueTask(day, id).changed, event: 'requeued' };
           else if (t.status === 'yellow') r = Model.finishTask(day, id); // click the current → done
           else {
@@ -381,11 +382,13 @@ function createState(store, hooks = {}) {
         // Spec: after each task is finished, propose a 10-minute break.
         emit('break-propose', { finishedTitle: r.task.title, nextTitle: Model.nextTask(day)?.title ?? null });
       }
-      // Reviving and switching deliberately do NOT re-flag: the user's
-      // explicit choice must stand (a re-flag would immediately park the
-      // task they just switched to). The frontier re-establishes on the
+      // Reviving, switching and reopening deliberately do NOT re-flag: the
+      // user's explicit choice must stand (a re-flag would immediately park
+      // the task they just made live). The frontier re-establishes on the
       // next finish/abort/move.
-      if (r.event !== 'requeued' && r.event !== 'switched') maintainIfAuto(day, Date.now());
+      if (r.event !== 'requeued' && r.event !== 'switched' && r.event !== 'reopened') {
+        maintainIfAuto(day, Date.now());
+      }
       return { event: r.event };
     },
 

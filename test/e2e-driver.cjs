@@ -147,6 +147,18 @@ async function run({ app, getMainWin, state, windows }) {
 
   // 9. report — metrics + templated headline (default template mode)
   const rep = await call('report:get', { scope: 'day' });
+  // 9b. click a finished task → reopens it (regression: green was a no-op)
+  const doneId = snap.day.tasks.find((t) => t.status === 'green')?.id;
+  if (doneId) {
+    await call('task:click', { id: doneId });
+    snap = await call('day:get');
+    check('clicking a finished task reopens it',
+      snap.day.tasks.find((t) => t.id === doneId)?.status === 'yellow');
+    await call('task:click', { id: doneId }); // finish it again to restore
+  } else {
+    check('clicking a finished task reopens it', true, 'no green task in scope');
+  }
+
   check('day report has metrics, issues, templated headline',
     rep.metrics && Array.isArray(rep.issues) && typeof rep.templated === 'string' && rep.templated.includes('done'));
 
