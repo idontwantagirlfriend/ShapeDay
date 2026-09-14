@@ -470,11 +470,15 @@ $('#llm-test').addEventListener('click', async () => {
 
 shapeday.onEvent((ev) => {
   if (ev.type === 'llm:etas') {
+    // AI touched estimates: the review banner must be seen (state reopens it
+    // via etaReviewed=false when it had been approved)
+    if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
-    st.textContent = `AI adjusted ${ev.data.applied} estimate(s)`;
+    st.textContent = `AI adjusted ${ev.data.applied} estimate(s) — review again`;
     st.className = 'llm-status ok';
   }
   if (ev.type === 'llm:status' && !ev.data.ok) {
+    if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
     st.textContent = `AI unreachable (${ev.data.where}): ${ev.data.error}`;
     st.className = 'llm-status err';

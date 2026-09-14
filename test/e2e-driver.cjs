@@ -159,6 +159,44 @@ async function run({ app, getMainWin, state, windows }) {
   snap = await call('day:get');
   check('overlay opacity setting round-trips', snap.settings.overlayOpacity === 55);
 
+  // 11. the real AI estimation path, against a local mock chat/completions
+  // endpoint: config -> mode -> debounce -> fetch -> parse -> apply -> event.
+  // Regression: etaReviewed (set by day:clear / "Looks right") used to kill
+  // refinement silently.
+  const http = require('http');
+  const srv = http.createServer((req, res) => {
+    let buf = '';
+    req.on('data', (c) => (buf += c));
+    req.on('end', () => {
+      let ids = [];
+      try {
+        const body = JSON.parse(buf);
+        const user = body.messages.find((m) => m.role === 'user');
+        ids = (JSON.parse(user.content).tasks || []).map((t) => t.id);
+      } catch {}
+      const content = JSON.stringify({ tasks: ids.map((id) => ({ id, minutes: 77 })) });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content } }] }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const mockUrl = `http://127.0.0.1:${srv.address().port}/v1`;
+
+  await call('settings:set', { llm: { baseUrl: mockUrl, model: 'mock', apiKey: '' }, estimatorMode: 'ai' });
+  await call('day:resetStatuses'); // all tasks red again; etaReviewed is true here (day:clear set it)
+  await call('task:add', { title: 'AI estimated chore' }); // fresh unedited task
+  await sleep(5000); // 1.5s config debounce + 2.5s add debounce + round-trip
+  snap = await call('day:get');
+  const aiCount = snap.day.tasks.filter((t) => t.estimateMin === 77).length;
+  check('AI estimation applied through configured endpoint', aiCount >= 1, `${aiCount} task(s) at mock value`);
+  check('AI refinement reopens the review after approval', snap.day.etaReviewed === false);
+  const evLLM = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:etas")');
+  check('llm:etas event surfaced', evLLM.length >= 1);
+  srv.close();
+
+  // leave AI mode off for any later steps
+  await call('settings:set', { estimatorMode: 'smart', llm: { baseUrl: '', model: '', apiKey: '' } });
+
   fs.writeFileSync('/tmp/shapeday-e2e.json', JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok);
   console.log(`e2e: ${results.length - failed.length}/${results.length} passed`);

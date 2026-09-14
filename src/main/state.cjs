@@ -204,7 +204,7 @@ function createState(store, hooks = {}) {
     if (etaDebounce.inFlight || !estimatorUsesAI()) return;
     const day = today();
     const candidates = day.tasks.filter((t) => t.status === 'red' && !t.estEdited);
-    if (!candidates.length || day.etaReviewed) return;
+    if (!candidates.length) return;
     etaDebounce.inFlight = true;
     try {
       const updates = await LLM.refineEtas(llmCfg(), {
@@ -226,6 +226,9 @@ function createState(store, hooks = {}) {
         }
       }
       if (applied) {
+        // The AI just changed numbers the user may have already approved:
+        // reopen the review so the change is seen, never silent.
+        if (day.etaReviewed) day.etaReviewed = false;
         touch();
         emit('llm:etas', { applied });
         onDirty();
