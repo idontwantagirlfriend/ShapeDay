@@ -460,6 +460,11 @@ for (const btn of $$('.step[data-time]')) {
   });
 }
 
+// ---------- overlay style ----------
+$('#set-overlay-style').addEventListener('change', (e) => {
+  shapeday.call('settings:set', { overlayStyle: e.target.value });
+});
+
 // ---------- background customization ----------
 $('#bg-choose').addEventListener('click', () => shapeday.call('background:choose'));
 $('#bg-clear').addEventListener('click', () => shapeday.call('settings:set', { backgroundImage: '' }));
@@ -554,6 +559,7 @@ function renderSettings() {
   put('#set-llm-key', s.llm?.apiKey || '');
   put('#set-llm-model', s.llm?.model || '');
   put('#set-ow-opacity', s.overlayOpacity ?? 92);
+  put('#set-overlay-style', s.overlayStyle === 'floater' ? 'floater' : 'top');
   if (document.activeElement !== $('#set-ow-opacity')) {
     $('#ow-op-val').textContent = `${s.overlayOpacity ?? 92}%`;
   }

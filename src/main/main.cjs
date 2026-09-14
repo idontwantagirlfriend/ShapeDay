@@ -108,6 +108,8 @@ function overlayEnabled() {
 }
 
 /** Show/hide overlay windows from the current snapshot. */
+let lastBarStyle = null;
+
 function syncOverlay(snap) {
   if (!overlayEnabled() || !snap) {
     barWin?.hide();
@@ -115,6 +117,11 @@ function syncOverlay(snap) {
     return; // note: the break toast stays — it's functional, not decoration
   }
   if (barWin) {
+    const style = snap.settings.overlayStyle === 'floater' ? 'floater' : 'top';
+    if (style !== lastBarStyle) {
+      lastBarStyle = style;
+      windows.applyBarStyle(barWin, style);
+    }
     const inDay = snap.day && (snap.day.tasks.length > 0);
     if (inDay || snap.active) barWin.showInactive();
     else barWin.hide();
@@ -172,6 +179,13 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
     if (mainWin && !mainWin.isDestroyed()) {
       mainWin.show();
       mainWin.focus();
+    }
+    return { ok: true };
+  }
+  if (kind === 'overlay:setInteractive') {
+    // top strip: click-through until the renderer says the cursor hit the grip
+    if (barWin && !barWin.isDestroyed() && _e.sender === barWin.webContents) {
+      barWin.setIgnoreMouseEvents(!payload?.on, { forward: true });
     }
     return { ok: true };
   }

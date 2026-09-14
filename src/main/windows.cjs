@@ -53,14 +53,30 @@ function createMainWindow() {
   return win;
 }
 
+/** Bar window geometry + mouse policy per overlay style.
+ *  top: full-width strip; click-through with forwarded moves so the renderer
+ *  can spot the grip and request interactivity. floater: corner widget,
+ *  fully interactive. */
+function applyBarStyle(win, style) {
+  if (!win || win.isDestroyed()) return;
+  const { workArea } = screen.getPrimaryDisplay();
+  if (style === 'floater') {
+    const W = 460, H = 78;
+    win.setBounds({ x: workArea.x + workArea.width - W - 16, y: workArea.y + 12, width: W, height: H });
+    win.setIgnoreMouseEvents(false);
+  } else {
+    win.setBounds({ x: workArea.x, y: workArea.y, width: workArea.width, height: 26 });
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
+}
+
 function createBar() {
   // the overarching strip: full work-area width, one narrow line at the top
   const { workArea } = screen.getPrimaryDisplay();
-  const H = 26;
   const win = track(
     new BrowserWindow({
       width: workArea.width,
-      height: H,
+      height: 26,
       x: workArea.x,
       y: workArea.y,
       frame: false,
@@ -76,6 +92,7 @@ function createBar() {
     })
   );
   win.setAlwaysOnTop(true, 'screen-saver');
+  win.setIgnoreMouseEvents(true, { forward: true });
   win.loadFile(UI('bar.html'));
   return win;
 }
@@ -136,4 +153,4 @@ function createTint() {
   return win;
 }
 
-module.exports = { createMainWindow, createBar, createToast, createTint, sendToAll, ALL };
+module.exports = { createMainWindow, createBar, createToast, createTint, sendToAll, applyBarStyle, ALL };

@@ -178,6 +178,20 @@ async function run({ app, getMainWin, state, windows }) {
   snap = await call('day:get');
   check('overlay opacity setting round-trips', snap.settings.overlayOpacity === 55);
 
+  // overlay style switch: top strip ↔ floater geometry follows
+  const barWin = windows.ALL.find((w) => w.webContents.getURL().includes('bar.html'));
+  const topBounds = barWin.getBounds();
+  await call('settings:set', { overlayStyle: 'floater' });
+  await sleep(600);
+  const flBounds = barWin.getBounds();
+  check('overlay style switches strip → floater geometry',
+    topBounds.width > 1000 && topBounds.height === 26 && flBounds.width === 460 && flBounds.height === 78,
+    `${topBounds.width}x${topBounds.height} → ${flBounds.width}x${flBounds.height}`);
+  await call('settings:set', { overlayStyle: 'top' });
+  await sleep(600);
+  const backBounds = barWin.getBounds();
+  check('overlay style returns to strip geometry', backBounds.width > 1000 && backBounds.height === 26);
+
   // background customization: set a real file, verify cover-fit layer, clear
   fs.writeFileSync('/tmp/shapeday-bg.png', Buffer.from(
     '89504e470d0a1a0a0000000d494844520000000100000001080600000' +

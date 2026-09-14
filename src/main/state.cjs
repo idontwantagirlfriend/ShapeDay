@@ -516,6 +516,9 @@ function createState(store, hooks = {}) {
         if (patch && k in patch) allowed[k] = patch[k];
       }
       if (patch && 'reflogOpen' in patch) allowed.reflogOpen = !!patch.reflogOpen;
+      if (patch && 'overlayStyle' in patch) {
+        allowed.overlayStyle = patch.overlayStyle === 'floater' ? 'floater' : 'top';
+      }
       if (patch && typeof patch.backgroundImage === 'string') {
         allowed.backgroundImage = patch.backgroundImage.slice(0, 400);
       }

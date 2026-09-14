@@ -20,6 +20,7 @@
       autoAdvance: true,
       overlayEnabled: true,
       overlayOpacity: 92, // % — the always-on-top bar's background
+      overlayStyle: 'top', // 'top' (full-width strip) | 'floater' (corner widget)
       reflogOpen: true, // unfold the plan-tab reflog by default
       backgroundImage: '', // absolute path; rendered cover-fit (scaled, clipped, ratio kept)
       // AI is opt-in per feature, never intrusive:

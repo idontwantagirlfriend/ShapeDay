@@ -1,14 +1,21 @@
 /**
- * bar — the overarching strip: full-width, one line, as compact as possible.
- * Text is the task headline only; the remaining time appears on hover.
- * Dragging moves the window (hand cursor included).
+ * bar — two overlay styles, one file.
+ *
+ * top (default): full-width strip. Click-through everywhere except the
+ * center grip (⋯), which is the only draggable spot — the strip no longer
+ * steals clicks from other apps' bars. The strip's whole background doubles
+ * as the day-progress bar.
+ *
+ * floater: the corner widget. Headline, clock, progress track, overwork
+ * line; drag anywhere.
  */
 'use strict';
 
-const barEl = document.getElementById('bar');
-const dot = document.getElementById('dot');
-const headline = document.getElementById('headline');
-const timeEl = document.getElementById('time');
+const $id = (id) => document.getElementById(id);
+const els = {
+  top: { bar: $id('topbar'), dot: $id('top-dot'), headline: $id('top-headline'), time: $id('top-time'), grip: $id('strip-grip'), fill: $id('strip-fill') },
+  fl: { bar: $id('floater'), dot: $id('fl-dot'), headline: $id('fl-headline'), clock: $id('fl-clock'), fill: $id('fl-fill'), ow: $id('fl-ow') },
+};
 
 const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.floor(m % 60)).padStart(2, '0')}`;
 
@@ -16,58 +23,85 @@ function remainingMinutes(s) {
   if (s.break) return Math.max(0, Math.ceil((s.break.plannedEnd - s.now) / 60000));
   if (s.active) {
     const elapsed = TimeUtil.taskElapsedMin(s.active, s.now);
-    return Math.max(0, s.active.estimateMin - elapsed); // minutes left on the estimate
+    return Math.max(0, s.active.estimateMin - elapsed);
   }
-  return Math.max(0, Math.ceil((s.bounds.end - s.now) / 60000)); // workday left
+  return Math.max(0, Math.ceil((s.bounds.end - s.now) / 60000));
 }
 
-shapeday.onTick((s) => {
-  // the whole strip honors the opacity setting, contents included
-  barEl.style.opacity = String(Math.max(0.2, Math.min(1, (s.settings.overlayOpacity ?? 92) / 100)));
+function headlineText(s) {
+  if (s.active) return s.active.title;
+  if (s.break) return 'on break';
+  return s.day.tasks.length ? 'no task on' : 'ShapeDay';
+}
 
-  if (s.active) {
-    dot.className = 'dot s-yellow';
-    headline.textContent = s.active.title;
-  } else if (s.break) {
-    dot.className = 'dot s-white';
-    headline.textContent = 'on break';
-  } else if (s.day.tasks.length) {
-    dot.className = 'dot s-red';
-    headline.textContent = 'no task on';
-  } else {
-    dot.className = 'dot';
-    headline.textContent = 'ShapeDay';
+let currentStyle = null;
+
+shapeday.onTick((s) => {
+  const style = s.settings.overlayStyle === 'floater' ? 'fl' : 'top';
+  if (style !== currentStyle) {
+    currentStyle = style;
+    els.top.bar.hidden = style !== 'top';
+    els.fl.bar.hidden = style !== 'fl';
   }
-  timeEl.textContent = `${fmt(remainingMinutes(s))} left`;
+  const opacity = Math.max(0.2, Math.min(1, (s.settings.overlayOpacity ?? 92) / 100));
+  const pct = Math.round(s.progress.ratio * 100);
+
+  if (style === 'top') {
+    els.top.bar.style.opacity = String(opacity);
+    els.top.dot.className = `dot s-${s.break ? 'white' : s.active ? 'yellow' : 'red'}`;
+    els.top.headline.textContent = headlineText(s);
+    els.top.time.textContent = `${fmt(remainingMinutes(s))} left`;
+    // the entire strip IS the progress bar
+    els.top.fill.style.width = `${pct}%`;
+    return;
+  }
+
+  els.fl.bar.style.opacity = String(opacity);
+  els.fl.dot.className = `dot s-${s.break ? 'white' : s.active ? 'yellow' : 'red'}`;
+  els.fl.headline.textContent = headlineText(s);
+  els.fl.fill.style.width = `${pct}%`;
+  if (s.break) {
+    const ms = Math.max(0, s.break.plannedEnd - s.now);
+    els.fl.clock.textContent = `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+    els.fl.ow.textContent = '';
+  } else if (s.active) {
+    els.fl.clock.textContent = fmt((s.now - (s.active.startedAt ?? s.now)) / 60000);
+    els.fl.ow.textContent = s.overworkMin > 0 ? `overwork ${fmt(s.overworkMin)}` : '';
+  } else {
+    els.fl.clock.textContent = '';
+    els.fl.ow.textContent = s.overworkMin > 0 ? `overwork ${fmt(s.overworkMin)}` : '';
+  }
 });
 
-headline.addEventListener('click', () => shapeday.focusMain());
+// ---------- top strip: click-through except the grip ----------
+// The window ignores the mouse (forwarding moves); hovering the grip turns
+// interactivity on, leaving it turns it off. The grip is the drag anchor.
+let interactive = false;
+function setInteractive(on) {
+  if (on === interactive) return;
+  interactive = on;
+  shapeday.call('overlay:setInteractive', { on });
+}
+document.addEventListener('mousemove', (e) => {
+  if (currentStyle !== 'top') return;
+  const r = els.top.grip.getBoundingClientRect();
+  const inside = e.clientX >= r.left - 6 && e.clientX <= r.right + 6 && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4;
+  setInteractive(inside);
+});
 
-// ---------- dragging: anchor on mousedown, stream moves, main repositions ----------
+// ---------- dragging (both styles; top only from the grip) ----------
 let drag = null;
-barEl.addEventListener('mousedown', (e) => {
+document.addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) return;
-  drag = { sx: e.screenX, sy: e.screenY, moved: false };
+  if (currentStyle === 'top' && !e.target.closest('.strip-grip')) return; // strip: grip only
+  drag = { sx: e.screenX, sy: e.screenY };
 });
 document.addEventListener('mousemove', (e) => {
-  if (!drag) return;
-  if (Math.abs(e.screenX - drag.sx) + Math.abs(e.screenY - drag.sy) > 4) drag.moved = true;
-  if (drag.moved) shapeday.call('overlay:drag', { sx: e.screenX, sy: e.screenY });
+  if (drag && (e.screenX !== drag.sx || e.screenY !== drag.sy)) {
+    shapeday.call('overlay:drag', { sx: e.screenX, sy: e.screenY });
+  }
 });
 document.addEventListener('mouseup', () => {
-  if (drag?.moved) {
-    headline.dataset.suppressClick = '1';
-    shapeday.call('overlay:drag', { end: true });
-  }
+  if (drag) shapeday.call('overlay:drag', { end: true });
   drag = null;
 });
-headline.addEventListener(
-  'click',
-  (e) => {
-    if (headline.dataset.suppressClick === '1') {
-      delete headline.dataset.suppressClick;
-      e.stopImmediatePropagation();
-    }
-  },
-  true // capture, before the focus handler
-);

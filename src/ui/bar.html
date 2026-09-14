@@ -7,11 +7,26 @@
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
-  <div class="topbar" id="bar">
-    <span class="dot" id="dot"></span>
-    <span class="headline" id="headline">no task on</span>
-    <span class="time" id="time"></span>
+  <!-- top style: full-width strip, click-through except the center grip -->
+  <div class="topbar" id="topbar" hidden>
+    <div class="strip-fill" id="strip-fill"></div>
+    <span class="dot" id="top-dot"></span>
+    <span class="headline" id="top-headline">no task on</span>
+    <span class="time" id="top-time"></span>
+    <span class="strip-grip" id="strip-grip" title="Drag">⋯</span>
   </div>
+
+  <!-- floater style: the corner widget -->
+  <div class="floater" id="floater" hidden>
+    <div class="row1">
+      <span class="dot" id="fl-dot"></span>
+      <span class="headline" id="fl-headline">no task on</span>
+      <span class="clock" id="fl-clock"></span>
+    </div>
+    <div class="track"><div class="fill" id="fl-fill"></div></div>
+    <div class="owclock" id="fl-ow"></div>
+  </div>
+
   <script src="../core/timeutil.cjs"></script>
   <script src="bar.js"></script>
 </body>
