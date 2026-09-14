@@ -6,3 +6,4 @@ shots/
 
 # app data — holds the LLM API key once configured; never commit it
 shapeday.json
+.cursor/*

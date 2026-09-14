@@ -12,9 +12,25 @@ const { createState } = require('./state.cjs');
 const windows = require('./windows.cjs');
 
 const store = Store.open(path.join(app.getPath('userData'), 'shapeday.json'));
+
+// Editable LLM prompts: bundled defaults seeded into the data dir once;
+// from then on the user's files win (llm.cjs re-reads them per call).
+const PROMPTS_DIR = path.join(app.getPath('userData'), 'prompts');
+try {
+  fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+  for (const name of ['eta.txt', 'summary.txt']) {
+    const dest = path.join(PROMPTS_DIR, name);
+    if (!fs.existsSync(dest)) {
+      fs.copyFileSync(path.join(__dirname, '..', '..', 'prompts', name), dest);
+    }
+  }
+} catch (e) {
+  console.error('[prompts] seeding failed:', e.message);
+}
+
 // onDirty: async LLM completions mutate state after the action returns —
 // they re-pump so every window sees the update immediately.
-const state = createState(store, { onDirty: () => pump() });
+const state = createState(store, { onDirty: () => pump(), promptsDir: PROMPTS_DIR });
 
 let mainWin = null;
 let barWin = null;

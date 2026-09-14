@@ -2,6 +2,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const LLM = require('../src/core/llm.cjs');
 
 /** Spin a mock chat/completions server. Handler receives {body, headers} and returns {status, content}. */
@@ -172,6 +175,32 @@ test('testConnection round-trips and reports latency', async () => {
     const r = await LLM.testConnection({ ...CFG, baseUrl: url });
     assert.strictEqual(r.ok, true);
     assert.ok(r.ms >= 0);
+  } finally {
+    srv.close();
+  }
+});
+
+test('system prompts load from editable files; missing file falls back', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapeday-prompts-'));
+  fs.writeFileSync(path.join(dir, 'eta.txt'), 'CUSTOM ETA PROMPT');
+  let seen = null;
+  const { srv, url } = await mockServer((r) => {
+    seen = r;
+    const sys = seen.body.messages[0].content;
+    const content = sys.includes('work-health')
+      ? JSON.stringify({ headline: 'h', issues: [] })
+      : JSON.stringify({ tasks: [] });
+    return { content };
+  });
+  try {
+    // custom file wins, sent verbatim as the system message
+    await LLM.refineEtas({ ...CFG, baseUrl: url, promptsDir: dir }, { tasks: [], history: [] });
+    assert.strictEqual(seen.body.messages[0].role, 'system');
+    assert.strictEqual(seen.body.messages[0].content, 'CUSTOM ETA PROMPT');
+
+    // no file for the summary prompt -> compiled default
+    await LLM.summarize({ ...CFG, baseUrl: url, promptsDir: dir }, { scope: 'day', metrics: {}, tasks: [] });
+    assert.ok(seen.body.messages[0].content.includes('work-health reviewer'));
   } finally {
     srv.close();
   }

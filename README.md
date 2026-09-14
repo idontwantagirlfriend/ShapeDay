@@ -87,8 +87,8 @@ blue to the darkest red.
 ```bash
 npm install
 npm start            # dev run
-npm test             # 40 unit tests (core logic, LLM transport, modes, reflog)
-npm run test:e2e     # 28-check end-to-end driver (runs the real UI)
+npm test             # 41 unit tests (core logic, LLM transport + prompts, modes, reflog)
+npm run test:e2e     # 31-check end-to-end driver (runs the real UI)
 npm run shot         # seed a demo day, screenshot every window → shots/
 npm run assets       # (re)normalize assets — see below
 npm run llm:smoke -- <baseUrl> <model> [apiKey]   # live-test the AI backend
@@ -153,6 +153,18 @@ an endpoint **and** pick AI for that feature. Modes in ⚙ Settings:
 Any OpenAI-compatible **chat/completions** endpoint works — fill Base URL +
 Model (+ API key if the provider needs one) and hit **Test**. The key lives
 in the local `shapeday.json`.
+
+**The prompts are yours to edit.** They are plain text files in the data
+dir, seeded from bundled defaults on first run and re-read on every request
+(edits apply on the next call, no restart):
+
+- `prompts/eta.txt` — the ETA estimation system prompt
+- `prompts/summary.txt` — the summary system prompt
+
+(`%APPDATA%\ShapeDay\prompts\` on Windows, `~/.config/ShapeDay/prompts/` on
+Linux.) Delete a file and restart to restore its default. The only contract:
+the model must reply with the JSON shape the file itself describes; output
+is validated and clamped either way.
 
 **Template arguments** (mustache variables — `{{name}}`, unknowns render
 empty, no sections/partials):

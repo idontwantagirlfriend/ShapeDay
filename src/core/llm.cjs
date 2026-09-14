@@ -11,8 +11,44 @@
  */
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const DEFAULT_TIMEOUT_MS = 25000;
 const MAX_RETRIES = 2;
+
+/**
+ * System prompts are editable text files: <promptsDir>/<name>.txt, seeded
+ * from the bundled defaults on first run. They are re-read on every call,
+ * so an edit applies on the next request without restarting. A missing or
+ * blank file falls back to the compiled default.
+ */
+const DEFAULT_PROMPTS = {
+  eta: [
+    'You estimate how long tasks take for one person, today.',
+    'Reply ONLY with JSON: {"tasks":[{"id":"...","minutes":N}]}',
+    'Rules: whole minutes, 5..240. Use the history (actual vs estimated) to correct for this person’s bias.',
+    'No prose, no markdown, no extra keys.',
+  ].join(' '),
+  summary: [
+    'You are a work-health reviewer for one person. You get metrics and their tasks with estimates vs actuals.',
+    'Pinpoint the REAL issues; do not pad. At most 4. If nothing is wrong, say so.',
+    'Reply ONLY with JSON: {"headline":"one short line","issues":[{"sev":"high|med|low|ok","text":"one line","fix":"one line"}]}',
+    'Terse. One line each. No essays, no praise padding.',
+  ].join(' '),
+};
+
+function loadPrompt(promptsDir, name) {
+  if (promptsDir) {
+    try {
+      const text = fs.readFileSync(path.join(promptsDir, `${name}.txt`), 'utf8');
+      if (text.trim()) return text;
+    } catch {
+      // no file yet: the compiled default is the real fallback
+    }
+  }
+  return DEFAULT_PROMPTS[name];
+}
 
 /** POST {baseUrl}/chat/completions → assistant message content. Throws on final failure. */
 async function chat(cfg, messages, opts = {}) {
@@ -97,20 +133,6 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-const SYSTEM_ETA = [
-  'You estimate how long tasks take for one person, today.',
-  'Reply ONLY with JSON: {"tasks":[{"id":"...","minutes":N}]}',
-  'Rules: whole minutes, 5..240. Use the history (actual vs estimated) to correct for this person’s bias.',
-  'No prose, no markdown, no extra keys.',
-].join(' ');
-
-const SYSTEM_SUMMARY = [
-  'You are a work-health reviewer for one person. You get metrics and their tasks with estimates vs actuals.',
-  'Pinpoint the REAL issues; do not pad. At most 4. If nothing is wrong, say so.',
-  'Reply ONLY with JSON: {"headline":"one short line","issues":[{"sev":"high|med|low|ok","text":"one line","fix":"one line"}]}',
-  'Terse. One line each. No essays, no praise padding.',
-].join(' ');
-
 /**
  * Batch-refine ETAs. ctx: {tasks:[{id,title,estimateMin}], history:[{title,est,act}],
  * workHours:"09:00–17:00", bias:1.3} → [{id, minutes}] (validated, clamped).
@@ -123,7 +145,7 @@ async function refineEtas(cfg, ctx) {
     tasks: ctx.tasks.map((t) => ({ id: t.id, title: t.title, currentEstimate: t.estimateMin })),
   });
   const reply = await chat(cfg, [
-    { role: 'system', content: SYSTEM_ETA },
+    { role: 'system', content: loadPrompt(cfg.promptsDir, 'eta') },
     { role: 'user', content: user },
   ]);
   const out = extractJson(reply);
@@ -151,7 +173,7 @@ async function summarize(cfg, ctx) {
     tasks: (ctx.tasks || []).slice(0, 60),
   });
   const reply = await chat(cfg, [
-    { role: 'system', content: SYSTEM_SUMMARY },
+    { role: 'system', content: loadPrompt(cfg.promptsDir, 'summary') },
     { role: 'user', content: user },
   ]);
   const out = extractJson(reply);

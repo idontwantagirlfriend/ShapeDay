@@ -128,7 +128,8 @@ function createState(store, hooks = {}) {
 
   function llmCfg() {
     const l = store.settings.llm || {};
-    return l.baseUrl && l.model ? l : null; // key optional for local endpoints
+    // key optional for local endpoints; promptsDir routes the editable prompt files
+    return l.baseUrl && l.model ? { ...l, promptsDir: hooks.promptsDir } : null;
   }
 
   /** AI estimation is opt-in: mode must say 'ai' AND an endpoint must exist. */
