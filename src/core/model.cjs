@@ -79,7 +79,7 @@
    *   yellow → click → green   (stamp finishedAt; caller handles break + auto-advance)
    *   paused → click → yellow  (resume: the segment clock restarts)
    *   white  → click → red     (revive: back to unfinished, NOT in progress)
-   *   green  → click → no-op   (use reopen)
+   *   green  → click → yellow  (reopen: back live, current parks on break)
    * Starting task B while A is yellow puts A "on break" (paused) with its
    * worked time kept.
    */
@@ -95,6 +95,9 @@
       cur.status = 'paused';
     }
 
+    if (t.status === 'green') {
+      return reopenTask(day, id, now);
+    }
     if (t.status === 'red' || t.status === 'paused') {
       t.status = 'yellow';
       t.startedAt = t.startedAt ?? now;
