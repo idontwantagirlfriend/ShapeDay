@@ -1,0 +1,35 @@
+appId: com.shapeday.app
+productName: ShapeDay
+directories:
+  output: dist
+files:
+  - src/**/*
+  - assets/**/*
+  - prompts/**/*
+  - package.json
+  - "!assets/raw/**"
+asar: true
+win:
+  icon: assets/icon.ico
+  target:
+    - nsis
+    - portable
+  # Allows building Windows targets on Linux (no wine): the exe keeps
+  # Electron's default icon resource; the NSIS installer + shortcuts still
+  # use assets/icon.ico. Build on Windows for a fully branded exe.
+  signAndEditExecutable: false
+nsis:
+  oneClick: false                     # assisted wizard → directory is selectable
+  allowToChangeInstallationDirectory: true
+  artifactName: ShapeDay-Setup-${version}.${ext}
+  # Update-friendly behavior, made explicit:
+  perMachine: false               # per-user install: updates never need elevation for user-writable dirs
+  deleteAppDataOnUninstall: false # upgrades AND uninstalls keep shapeday.json (API key, history)
+  runAfterFinish: true            # "Run ShapeDay" checkbox on the finish page
+  include: build/installer.nsh    # closes the running tray-resident app before updating
+portable:
+  artifactName: ShapeDay-Portable-${version}.${ext}
+linux:
+  icon: assets/icon.png
+  target: AppImage
+  category: Office

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+shots/
+
+# app data — holds the LLM API key once configured; never commit it
+shapeday.json
+.cursor/*

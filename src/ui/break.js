@@ -1,0 +1,59 @@
+/**
+ * break — the proposal / countdown toast.
+ * States: proposal (accept / skip) → countdown → auto "break over".
+ * "Taking breaks is productive." — PROJECT.md, Phase Two.
+ */
+'use strict';
+
+const headline = document.getElementById('headline');
+const sub = document.getElementById('sub');
+const proposeBox = document.getElementById('propose');
+const activeBox = document.getElementById('active');
+const countdown = document.getElementById('countdown');
+
+let mode = 'propose'; // propose | counting
+
+function show(mode_) {
+  mode = mode_;
+  proposeBox.hidden = mode !== 'propose';
+  activeBox.hidden = mode !== 'counting';
+  if (mode === 'counting') {
+    headline.textContent = 'On break';
+    sub.textContent = 'Look away from the screen. Really.';
+  }
+}
+
+document.getElementById('accept').addEventListener('click', () => {
+  shapeday.call('break:respond', { accept: true });
+  show('counting');
+});
+document.getElementById('skip').addEventListener('click', () => {
+  shapeday.call('break:respond', { accept: false });
+});
+document.getElementById('end').addEventListener('click', () => {
+  shapeday.call('break:end');
+});
+
+shapeday.onEvent((ev) => {
+  if (ev.type === 'break-propose') {
+    show('propose');
+    headline.textContent = 'Task done.';
+    sub.textContent = ev.data?.nextTitle
+      ? `Next up: “${ev.data.nextTitle}”. Ten minutes off makes it faster.`
+      : 'Nothing queued. Ten minutes off anyway?';
+  }
+  if (ev.type === 'break-started') show('counting');
+  if (ev.type === 'break-over' || ev.type === 'break-skipped') mode = 'propose';
+});
+
+shapeday.onTick((s) => {
+  // Adopt a break that's already running (restart mid-break, or accepted elsewhere).
+  if (s.break && mode === 'propose') show('counting');
+  if (mode !== 'counting') return;
+  if (!s.break) return; // ended elsewhere (auto or main window)
+  const ms = Math.max(0, s.break.plannedEnd - s.now);
+  const m = Math.floor(ms / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  countdown.textContent = `${m}:${String(sec).padStart(2, '0')}`;
+  countdown.classList.toggle('late', ms === 0);
+});
