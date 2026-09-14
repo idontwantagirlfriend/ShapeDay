@@ -1,0 +1,24 @@
+{
+  "name": "shapeday",
+  "productName": "ShapeDay",
+  "version": "1.0.0",
+  "description": "Plan. Visualize. Report. A tactile day-shape work tracker with overwork awareness.",
+  "main": "src/main/main.cjs",
+  "license": "MIT",
+  "author": "Leah",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "test:e2e": "node scripts/drive.mjs e2e",
+    "shot": "node scripts/drive.mjs shot",
+    "assets": "node scripts/normalize-assets.mjs",
+    "llm:smoke": "node scripts/llm-smoke.mjs",
+    "dist:win": "electron-builder --win nsis portable",
+    "dist:linux": "electron-builder --linux AppImage"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0",
+    "jimp": "^1.6.0"
+  }
+}

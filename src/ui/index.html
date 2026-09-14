@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>ShapeDay</title>
+  <link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand">Shape<span>Day</span></div>
+      <div class="day" id="hd-day">—</div>
+      <div class="day-progress" title="Day progress in planned minutes">
+        <div class="track"><div class="fill" id="hd-fill" style="width:0%"></div></div>
+        <div class="pct" id="hd-pct">0%</div>
+      </div>
+      <details class="settings">
+        <summary>⚙</summary>
+        <div class="settings-pop">
+          <label>Work start
+            <span class="ctl"><input type="text" id="set-start" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" /><span class="help" data-help="When your work hours begin. The timeline and the overwork clock key off this.">i</span></span>
+          </label>
+          <label>Work end
+            <span class="ctl"><input type="text" id="set-end" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" /><span class="help" data-help="When work hours end. Past this moment the screen begins tinting — blue, then red, then darkest red.">i</span></span>
+          </label>
+          <label>Break length
+            <span class="ctl"><input type="number" id="set-break" min="5" max="30" step="1" /><span class="help" data-help="Length of the break proposed after each finished task.">i</span></span>
+          </label>
+          <label class="toggle" style="justify-content:flex-end">Auto-advance <input type="checkbox" id="set-auto" /></label>
+          <label class="toggle" style="justify-content:flex-end">Overlay <input type="checkbox" id="set-overlay" /></label>
+          <div class="settings-sep"></div>
+          <label>ETA estimation
+            <span class="ctl"><select id="set-est-mode">
+              <option value="smart">Smart reading</option>
+              <option value="ai">AI estimation</option>
+            </select><span class="help" data-help="Smart reading: keyword buckets × your personal bias factor, learned from your completed tasks. AI estimation: your configured endpoint re-estimates every unstarted task you haven't hand-edited.">i</span></span>
+          </label>
+          <label>Summarize
+            <span class="ctl"><select id="set-sum-mode">
+              <option value="template">Templated text</option>
+              <option value="ai">AI</option>
+            </select><span class="help" data-help="Templated text: your mustache template over the report metrics, fully offline. AI: the model writes the headline and pinpoints the issues.">i</span></span>
+          </label>
+          <label class="col">Summary template
+            <textarea id="set-sum-template" rows="3" spellcheck="false"></textarea>
+            <span class="help" data-help="Mustache variables: {{tasksDone}} {{tasksTotal}} {{tasksHung}} {{plannedMin}} {{actualMin}} {{estBias}} {{overworkDays}} {{overworkMin}} {{breaks}} {{breakMin}} {{longestNoBreakMin}} {{daysTracked}} {{scope}} — unknowns render empty.">i</span>
+          </label>
+          <div class="settings-sep"></div>
+          <label>Base URL
+            <span class="ctl"><input type="text" id="set-llm-url" placeholder="https://…/v1" spellcheck="false" /><span class="help" data-help="Any OpenAI-compatible endpoint — everything before /chat/completions. Keyless gateways work without a key.">i</span></span>
+          </label>
+          <label>API key
+            <span class="ctl"><input type="password" id="set-llm-key" placeholder="sk-…" autocomplete="off" /><span class="help" data-help="Only if the provider requires one. Stored locally in shapeday.json — never committed anywhere.">i</span></span>
+          </label>
+          <label>Model
+            <span class="ctl"><input type="text" id="set-llm-model" placeholder="model id" spellcheck="false" /><span class="help" data-help="The provider's model id — e.g. openrouter/free, gpt-4o-mini, gpt-oss:20b.">i</span></span>
+          </label>
+          <div class="llm-test-row">
+            <button id="llm-test">Test</button>
+            <span class="llm-status" id="llm-status"></span>
+          </div>
+        </div>
+      </details>
+    </header>
+
+    <nav class="tabs">
+      <button data-view="plan" class="active">Plan <span class="k">1</span></button>
+      <button data-view="viz">Visualize <span class="k">2</span></button>
+      <button data-view="sum">Summarize <span class="k">3</span></button>
+    </nav>
+
+    <main>
+      <!-- Phase One: Plan -->
+      <section class="view active" id="view-plan">
+        <div class="plan-add">
+          <input id="add-input" placeholder="What's due today?" autocomplete="off" />
+          <button class="primary" id="add-btn">List it</button>
+        </div>
+        <div class="eta-banner" id="eta-banner" hidden>
+          <b>Review ETAs.</b> <span id="eta-mode" class="mode-tag"></span>
+          <button id="eta-ai" hidden title="Ask the configured AI to re-estimate every unstarted task">Refine with AI</button>
+          <span class="llm-status" id="eta-llm-status"></span>
+          <button id="eta-ok">Looks right</button>
+        </div>
+        <ul class="tasks" id="task-list"></ul>
+        <div class="plan-tools">
+          <button class="ghost" id="btn-reset" title="Keep titles, everything back to red">↺ Reset statuses</button>
+          <button class="ghost" id="btn-clear" title="Remove every task from today">Clear the day</button>
+          <div class="spacer"></div>
+          <span class="toggle" title="Mark the immediate next task in progress automatically">Auto-advance
+            <input type="checkbox" id="plan-auto" />
+          </span>
+        </div>
+
+        <details class="reflog" id="reflog" hidden>
+          <summary>Reflog <span class="count" id="reflog-count"></span></summary>
+          <ul id="reflog-list"></ul>
+        </details>
+      </section>
+
+      <!-- Phase Two: Visualize -->
+      <section class="view" id="view-viz">
+        <div class="viz-wrap">
+          <canvas id="timeline" height="380"></canvas>
+          <div class="legend">
+            <span><i class="sw sw-work"></i>working (broken line)</span>
+            <span><i class="sw sw-flat"></i>break / idle (flat)</span>
+            <span><i class="sw sw-plan"></i>plan pace</span>
+            <span><i class="sw sw-done"></i>done node</span>
+            <span><i class="sw sw-ow"></i>overwork tint</span>
+          </div>
+          <div class="viz-stats">
+            <div class="stat"><div class="v" id="st-done">0/0</div><div class="l">tasks done</div></div>
+            <div class="stat"><div class="v" id="st-est">0m</div><div class="l">planned vs delivered</div></div>
+            <div class="stat"><div class="v" id="st-breaks">0</div><div class="l">breaks taken</div></div>
+            <div class="stat overwork"><div class="v" id="st-ow">0m</div><div class="l">overwork</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Phase Three: Summarize -->
+      <section class="view" id="view-sum">
+        <div class="sum-scopes">
+          <button data-scope="day" class="active">Day</button>
+          <button data-scope="week">Week</button>
+          <button data-scope="30d">Past 30 days</button>
+        </div>
+        <div class="metrics" id="sum-metrics"></div>
+        <div class="issues" id="sum-issues"></div>
+        <div id="sum-detail"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 50% self-evaluation -->
+  <div class="modal-backdrop" id="eval-modal">
+    <div class="modal">
+      <h3>Halfway</h3>
+      <p>50% of today's plan is done. A quick check with yourself — how's the pace?</p>
+      <div class="row">
+        <button data-resp="ahead">Ahead</button>
+        <button data-resp="on-track" class="primary">On track</button>
+        <button data-resp="behind">Behind</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- shared pure core, then UI -->
+  <script src="../core/timeutil.cjs"></script>
+  <script src="../core/overwork.cjs"></script>
+  <script src="timeline.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

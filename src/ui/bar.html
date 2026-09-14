@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en" class="overlay">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>ShapeDay bar</title>
+  <link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+  <div class="bar" id="bar" title="ShapeDay — click the tray for the app">
+    <div class="row1">
+      <span class="status-dot" id="dot"></span>
+      <span class="title" id="title">no task on</span>
+      <span class="clock" id="clock"></span>
+    </div>
+    <div class="track"><div class="fill" id="fill" style="width:0%"></div></div>
+    <div class="owclock" id="ow"></div>
+  </div>
+  <script src="../core/overwork.cjs"></script>
+  <script src="bar.js"></script>
+</body>
+</html>
