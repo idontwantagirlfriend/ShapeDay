@@ -583,29 +583,34 @@ html.overlay, html.overlay body { background: transparent; }
 .topbar .strip-grip:hover { color: var(--accent); }
 .topbar .strip-grip:active { cursor: grabbing; }
 
-/* floater: the corner widget */
+/* floater: the rounded capsule only — headline, clock, drag grip */
 .floater {
   width: 100%;
   height: 100vh;
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 10px 14px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
   background: rgba(22, 24, 29, 0.92);
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow: hidden;
-  cursor: grab;
   user-select: none;
 }
-.floater:active { cursor: grabbing; }
-.floater .row1 { display: flex; align-items: center; gap: 10px; }
 .floater .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .floater .headline { flex: 1; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .floater .clock { font-size: 0.92rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.floater .track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
-.floater .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
-.floater .owclock { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.floater .fl-grip {
+  flex: none;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: grab;
+  padding: 4px 2px;
+}
+.floater .fl-grip:hover { color: var(--accent); }
+.floater .fl-grip:active { cursor: grabbing; }
 
 .toast {
   width: 100%; height: 100vh;

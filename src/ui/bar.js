@@ -6,15 +6,15 @@
  * steals clicks from other apps' bars. The strip's whole background doubles
  * as the day-progress bar.
  *
- * floater: the corner widget. Headline, clock, progress track, overwork
- * line; drag anywhere.
+ * floater: the rounded capsule only — dot, headline, clock. Dragging is
+ * grip-only here too (⋯ at the end).
  */
 'use strict';
 
 const $id = (id) => document.getElementById(id);
 const els = {
   top: { bar: $id('topbar'), dot: $id('top-dot'), headline: $id('top-headline'), time: $id('top-time'), grip: $id('strip-grip'), fill: $id('strip-fill') },
-  fl: { bar: $id('floater'), dot: $id('fl-dot'), headline: $id('fl-headline'), clock: $id('fl-clock'), fill: $id('fl-fill'), ow: $id('fl-ow') },
+  fl: { bar: $id('floater'), dot: $id('fl-dot'), headline: $id('fl-headline'), clock: $id('fl-clock') },
 };
 
 const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.floor(m % 60)).padStart(2, '0')}`;
@@ -44,7 +44,6 @@ shapeday.onTick((s) => {
     els.fl.bar.hidden = style !== 'fl';
   }
   const opacity = Math.max(0.2, Math.min(1, (s.settings.overlayOpacity ?? 92) / 100));
-  const pct = Math.round(s.progress.ratio * 100);
 
   if (style === 'top') {
     els.top.bar.style.opacity = String(opacity);
@@ -52,24 +51,20 @@ shapeday.onTick((s) => {
     els.top.headline.textContent = headlineText(s);
     els.top.time.textContent = `${fmt(remainingMinutes(s))} left`;
     // the entire strip IS the progress bar
-    els.top.fill.style.width = `${pct}%`;
+    els.top.fill.style.width = `${Math.round(s.progress.ratio * 100)}%`;
     return;
   }
 
   els.fl.bar.style.opacity = String(opacity);
   els.fl.dot.className = `dot s-${s.break ? 'white' : s.active ? 'yellow' : 'red'}`;
   els.fl.headline.textContent = headlineText(s);
-  els.fl.fill.style.width = `${pct}%`;
   if (s.break) {
     const ms = Math.max(0, s.break.plannedEnd - s.now);
     els.fl.clock.textContent = `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
-    els.fl.ow.textContent = '';
   } else if (s.active) {
     els.fl.clock.textContent = fmt((s.now - (s.active.startedAt ?? s.now)) / 60000);
-    els.fl.ow.textContent = s.overworkMin > 0 ? `overwork ${fmt(s.overworkMin)}` : '';
   } else {
     els.fl.clock.textContent = '';
-    els.fl.ow.textContent = s.overworkMin > 0 ? `overwork ${fmt(s.overworkMin)}` : '';
   }
 });
 
@@ -93,7 +88,9 @@ document.addEventListener('mousemove', (e) => {
 let drag = null;
 document.addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) return;
-  if (currentStyle === 'top' && !e.target.closest('.strip-grip')) return; // strip: grip only
+  // both styles drag from their grip only
+  const grip = currentStyle === 'top' ? '.strip-grip' : '.fl-grip';
+  if (!e.target.closest(grip)) return;
   drag = { sx: e.screenX, sy: e.screenY };
 });
 document.addEventListener('mousemove', (e) => {
