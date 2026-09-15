@@ -87,6 +87,18 @@ let barWin = null;
 let toastWin = null;
 let tintWin = null;
 let tray = null;
+let isQuitting = false;
+
+/** Show the main window, recreating it if it was destroyed (e.g. by a
+ *  close that slipped past the hide-to-tray interception). */
+function showMain() {
+  if (!mainWin || mainWin.isDestroyed()) {
+    mainWin = windows.createMainWindow();
+    return;
+  }
+  mainWin.show();
+  mainWin.focus();
+}
 
 function assetPath(rel) {
   return path.join(__dirname, '..', '..', 'assets', rel);
@@ -127,7 +139,7 @@ function syncOverlay(snap) {
     else barWin.hide();
   }
   if (tintWin) {
-    if (snap.overworkMin > 0) {
+    if (snap.overworkMin > 0 && (snap.settings.tintStrength ?? 100) > 0) {
       if (!tintWin.isVisible()) tintWin.showInactive();
       tintWin.moveTop();
     } else {
@@ -176,10 +188,7 @@ function handleOverlayDrag(senderId, target, p) {
 
 ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
   if (kind === 'focusMain') {
-    if (mainWin && !mainWin.isDestroyed()) {
-      mainWin.show();
-      mainWin.focus();
-    }
+    showMain();
     return { ok: true };
   }
   if (kind === 'overlay:setInteractive') {
@@ -234,15 +243,18 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (mainWin && !mainWin.isDestroyed()) {
-      mainWin.show();
-      mainWin.focus();
-    }
-  });
+  app.on('second-instance', () => showMain());
 
   app.whenReady().then(() => {
     mainWin = windows.createMainWindow();
+    // closing hides to tray: the window object survives, so tray-restore is
+    // instant and nothing ever calls show() on a destroyed window
+    mainWin.on('close', (e) => {
+      if (!isQuitting) {
+        e.preventDefault();
+        mainWin.hide();
+      }
+    });
     tintWin = windows.createTint(); // tint first → bar/toast stay above it
     barWin = windows.createBar();
     toastWin = windows.createToast();
@@ -250,7 +262,7 @@ if (!gotLock) {
     tray = new Tray(trayIcon());
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Show ShapeDay', click: () => mainWin?.show() },
+        { label: 'Show ShapeDay', click: () => showMain() },
         {
           label: 'Overlay on/off',
           type: 'checkbox',
@@ -265,7 +277,7 @@ if (!gotLock) {
       ])
     );
     tray.setToolTip('ShapeDay');
-    tray.on('click', () => mainWin?.show());
+    tray.on('click', () => showMain());
 
     globalShortcut.register('Alt+Shift+O', () => {
       store.setSettings({ overlayEnabled: !overlayEnabled() });
@@ -298,6 +310,7 @@ if (!gotLock) {
   });
 
   app.on('before-quit', () => {
+    isQuitting = true;
     globalShortcut.unregisterAll();
     store.flush();
   });

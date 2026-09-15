@@ -199,6 +199,16 @@ async function run({ app, getMainWin, state, windows }) {
   await sleep(600);
   const backBounds = barWin.getBounds();
   check('overlay style returns to strip geometry', backBounds.width > 1000 && backBounds.height === 26);
+
+  // tint strength: clamps + zero hides the tint window even in overwork
+  await call('settings:set', { tintStrength: 999 });
+  snap = await call('day:get');
+  check('tint strength clamps to 0..200', snap.settings.tintStrength === 200, String(snap.settings.tintStrength));
+  await call('settings:set', { tintStrength: 0 });
+  await sleep(700);
+  const tintHiddenAtZero = windows.ALL.find((w) => w.webContents.getURL().includes('tint.html'));
+  check('tint hidden at strength 0 despite overwork', tintHiddenAtZero && !tintHiddenAtZero.isVisible());
+  await call('settings:set', { tintStrength: 100 });
   const topShown = await barWin.webContents.executeJavaScript(`({
     top: getComputedStyle(document.getElementById('topbar')).display,
     fl: getComputedStyle(document.getElementById('floater')).display,
@@ -413,6 +423,25 @@ async function run({ app, getMainWin, state, windows }) {
   const repYear = await call('report:get', { scope: 'year' });
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');
+
+  // tray-restore regression: closing must hide (not destroy) the window, and
+  // showing it again must not throw "Object has been destroyed"
+  const mainW = getMainWin();
+  mainW.close(); // intercepted by hide-to-tray; never destroys
+  await sleep(500);
+  const hiddenNotDestroyed = !mainW.isVisible() && !mainW.isDestroyed();
+  let restored = false;
+  try {
+    const barW = windows.ALL.find((w) => w.webContents.getURL().includes('bar.html'));
+    await barW.webContents.executeJavaScript(`shapeday.call('focusMain'), true`);
+    await sleep(500);
+    const after = getMainWin(); // may be the hidden one shown, or a fresh one
+    restored = !!after && !after.isDestroyed() && after.isVisible();
+  } catch {
+    restored = false;
+  }
+  check('close hides to tray; restore works without destroy', hiddenNotDestroyed && restored,
+    `hidden=${hiddenNotDestroyed} restored=${restored}`);
 
   fs.writeFileSync('/tmp/shapeday-e2e.json', JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok);

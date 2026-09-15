@@ -21,6 +21,7 @@
       overlayEnabled: true,
       overlayOpacity: 92, // % — the always-on-top bar's background
       overlayStyle: 'top', // 'top' (full-width strip) | 'floater' (corner widget)
+      tintStrength: 100, // % of the overwork tint: 0 hides it, 200 doubles it
       reflogOpen: true, // unfold the plan-tab reflog by default
       backgroundImage: '', // absolute path; rendered cover-fit (scaled, clipped, ratio kept)
       // AI is opt-in per feature, never intrusive:
@@ -47,6 +48,7 @@
       version: data?.version ?? DEFAULTS.version,
       settings: { ...DEFAULTS.settings, ...(data?.settings || {}) },
       days: data?.days || {},
+      summaries: data?.summaries || {},
     };
 
     let writeTimer = null;
