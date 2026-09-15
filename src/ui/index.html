@@ -193,16 +193,14 @@
     </main>
   </div>
 
-  <!-- 50% self-evaluation -->
-  <div class="modal-backdrop" id="eval-modal">
-    <div class="modal">
-      <h3>Halfway</h3>
-      <p>50% of today's plan is done. A quick check with yourself — how's the pace?</p>
-      <div class="row">
-        <button data-resp="ahead">Ahead</button>
-        <button data-resp="on-track" class="primary">On track</button>
-        <button data-resp="behind">Behind</button>
-      </div>
+  <!-- task halfway check — left-side popup, never a centered alert -->
+  <div class="eval-pop" id="eval-modal" hidden>
+    <h3 id="eval-title">Halfway</h3>
+    <p id="eval-text">Half of this task is done — how's the pace?</p>
+    <div class="row">
+      <button data-resp="ahead">Ahead</button>
+      <button data-resp="on-track" class="primary">On track</button>
+      <button data-resp="behind">Behind</button>
     </div>
   </div>
 

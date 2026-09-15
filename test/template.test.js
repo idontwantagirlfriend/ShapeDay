@@ -64,6 +64,36 @@ test('custom template round-trips through settings and renders', () => {
   assert.strictEqual(r.templated, 'scope=week hung=0 bias=—'); // empty history → estBias null → em dash
 });
 
+test('hung tasks revive on top of the next day, exactly once', () => {
+  const Model = require('../src/core/model.cjs');
+  const { state, store } = freshState();
+  const pad = (x) => String(x).padStart(2, '0');
+  const t = new Date();
+  const y = new Date(t);
+  y.setDate(y.getDate() - 1);
+  const yKey = `${y.getFullYear()}-${pad(y.getMonth() + 1)}-${pad(y.getDate())}`;
+
+  // yesterday: one done, two hung (listed in order)
+  store.updateDay(yKey, (d) => {
+    d.tasks.push({ ...Model.newTask('Stuck research', 90), status: 'white', skippedAt: 1 });
+    d.tasks.push({ ...Model.newTask('Done thing', 30), status: 'green', startedAt: 1, finishedAt: 2, worked: [] });
+    d.tasks.push({ ...Model.newTask('Blocked call', 30), status: 'white', skippedAt: 2 });
+  });
+
+  // the next tick performs the rollover: hung return as red, on top
+  state.tick();
+  const after = state.snapshot().day;
+  const titles = after.tasks.map((x) => x.title);
+  assert.deepStrictEqual(titles.slice(0, 2), ['Stuck research', 'Blocked call'], JSON.stringify(titles));
+  assert.ok(after.tasks.slice(0, 2).every((x) => x.status === 'red'), 'revived are red');
+  assert.ok(after.tasks.slice(0, 2).every((x) => x.startedAt == null), 'revived carry no stamps');
+
+  // idempotent: another tick adds nothing (yesterday is marked migrated)
+  state.tick();
+  const again = state.snapshot().day;
+  assert.strictEqual(again.tasks.length, 2);
+});
+
 test('ai modes with endpoint flip the guards', () => {
   const { state } = freshState();
   state.actions['settings:set']({ llm: { baseUrl: 'http://127.0.0.1:9', model: 'x' }, estimatorMode: 'ai' });

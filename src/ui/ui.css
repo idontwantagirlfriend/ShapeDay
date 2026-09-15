@@ -268,7 +268,14 @@ li.task .del {
   font-size: 0.9rem; padding: 2px 6px; cursor: pointer; flex: none;
 }
 li.task:hover .del { display: inline-block; }
-li.task .del:hover { color: var(--red); }
+li.task:hover .del {
+  display: inline-block;
+  color: var(--red);
+  background: rgba(224, 101, 90, 0.14);
+  border: 1px solid rgba(224, 101, 90, 0.45);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
 
 /* task reflog */
 details.reflog { margin-top: 14px; }
@@ -495,6 +502,29 @@ table.day-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-
 table.day-table th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--line); }
 table.day-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 table.day-table td.mini { color: var(--text-dim); }
+
+/* task halfway check: anchored left, no backdrop, nothing blocked */
+.eval-pop {
+  position: fixed;
+  left: 18px;
+  top: 76px;
+  z-index: 50;
+  width: 300px;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: eval-slide 0.18s ease-out;
+}
+@keyframes eval-slide {
+  from { transform: translateX(-16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.eval-pop h3 { margin: 0 0 6px; font-size: 0.95rem; }
+.eval-pop p { color: var(--text-dim); margin: 0 0 12px; font-size: 0.85rem; }
+.eval-pop .row { display: flex; gap: 6px; }
+.eval-pop .row button { padding: 6px 10px; font-size: 0.82rem; }
 
 /* ---------- modal (self-eval) ---------- */
 .modal-backdrop {

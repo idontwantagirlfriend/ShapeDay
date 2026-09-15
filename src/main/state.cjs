@@ -98,9 +98,39 @@ function createState(store, hooks = {}) {
    * tick — called ~1 Hz from the main process.
    * Closes finished breaks, fires the 50% self-evaluation prompt once.
    */
+  // ---------- day rollover: white tasks revive on top of the new day ------
+
+  let lastDayKey = null;
+
+  /** Yesterday's hung tasks return as fresh red tasks at the TOP of today's
+   *  list, once — the previous day is marked so restarts never duplicate.
+   *  They don't accumulate: deleting is always one hover-click away. */
+  function reviveHungTasks(todayDay, now) {
+    const d = new Date(todayDay.date + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    const pad = (x) => String(x).padStart(2, '0');
+    const prevKey = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const prev = store.day(prevKey);
+    if (!prev || prev.whitesMigrated) return;
+    prev.whitesMigrated = true;
+    const hung = (prev.tasks || []).filter((t) => t.status === 'white');
+    if (!hung.length) return;
+    logged(todayDay, () => {
+      for (const t of hung.reverse()) {
+        const fresh = Model.newTask(t.title, t.estimateMin);
+        todayDay.tasks.unshift(fresh); // on top
+      }
+    });
+    touch();
+  }
+
   function tick(nowMs) {
     const now = nowMs ?? Date.now();
     const day = today();
+    if (day.date !== lastDayKey) {
+      lastDayKey = day.date;
+      reviveHungTasks(day, now); // a brand-new day inherits yesterday's hung
+    }
     const brk = activeBreak(day);
     if (brk && now >= brk.start + brk.plannedMin * 60000) {
       brk.end = now;

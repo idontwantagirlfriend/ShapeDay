@@ -821,14 +821,21 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && settingsEl.open) settingsEl.open = false;
 });
 
-// ---------- self-evaluation (towards 50%) ----------
+// ---------- task halfway check (left-side popup) ----------
 shapeday.onEvent((ev) => {
-  if (ev.type === 'eval-prompt') $('#eval-modal').classList.add('open');
+  if (ev.type === 'eval-prompt') {
+    const t = ev.data?.title;
+    $('#eval-title').textContent = t ? `Half of “${t.length > 26 ? t.slice(0, 25) + '…' : t}”` : 'Halfway';
+    const worked = Math.round(ev.data?.workedMin ?? 0);
+    const est = Math.round(ev.data?.estimateMin ?? 0);
+    $('#eval-text').textContent = `${worked}m in on a ${est}m task — how's the pace?`;
+    $('#eval-modal').hidden = false;
+  }
 });
 $$('#eval-modal [data-resp]').forEach((b) =>
   b.addEventListener('click', () => {
     shapeday.call('eval:respond', { response: b.dataset.resp });
-    $('#eval-modal').classList.remove('open');
+    $('#eval-modal').hidden = true;
   })
 );
 
