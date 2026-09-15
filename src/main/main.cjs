@@ -173,16 +173,27 @@ function pump() {
 // Manual overlay dragging (top strip, break toast) — handled before the
 // state dispatch because it runs at mouse-move frequency and must not
 // trigger a state pump per event. The sender identifies the window.
-const overlayDrags = new Map(); // webContents id -> {active, x, y, mx, my}
+const overlayDrags = new Map(); // webContents id -> {active, x, y, w, h, mx, my}
 function handleOverlayDrag(senderId, target, p) {
   if (!target || target.isDestroyed()) return { ok: false };
   let drag = overlayDrags.get(senderId);
-  if (!drag || !drag.active) {
+  if (!drag || !drag.active || p.begin) {
+    // a press always re-anchors: a lost mouseup (click-through swallowing it)
+    // must never leave a stale anchor steering the next drag
     const [x, y] = target.getPosition();
-    drag = { active: true, x, y, mx: p.sx, my: p.sy };
+    const [w, h] = target.getSize();
+    drag = { active: true, x, y, w, h, mx: p.sx, my: p.sy };
     overlayDrags.set(senderId, drag);
   }
-  target.setPosition(Math.round(drag.x + (p.sx - drag.mx)), Math.round(drag.y + (p.sy - drag.my)));
+  // setBounds (not setPosition): re-asserts the anchored size on every move,
+  // so no external resize creep (OS DPI snapping, snap layouts, anything)
+  // can accumulate while the window is being dragged
+  target.setBounds({
+    x: Math.round(drag.x + (p.sx - drag.mx)),
+    y: Math.round(drag.y + (p.sy - drag.my)),
+    width: drag.w,
+    height: drag.h,
+  });
   return { ok: true };
 }
 

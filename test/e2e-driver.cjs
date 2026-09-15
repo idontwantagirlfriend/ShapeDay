@@ -327,7 +327,7 @@ async function run({ app, getMainWin, state, windows }) {
   await sleep(300);
   const flMoved = barWin.getPosition();
   check('floater drags from anywhere on the capsule',
-    flMoved[0] === flPos[0] + 40 && flMoved[1] === flPos[1] + 30, `${flPos} → ${flMoved}`);
+    flMoved[0] === flPos[0] + 80 && flMoved[1] === flPos[1] + 60, `${flPos} → ${flMoved}`); // press-anchored: full cursor delta
   policy.length = 0;
   await barWin.webContents.executeJavaScript('shapeday.call("overlay:setInteractive", { on: false })');
   await sleep(200);
@@ -349,7 +349,7 @@ async function run({ app, getMainWin, state, windows }) {
   await sleep(300);
   const topMoved = barWin.getPosition();
   check('strip still drags from the grip',
-    topMoved[0] === topPos[0] + 20 && topMoved[1] === topPos[1] + 10, `${topPos} → ${topMoved}`);
+    topMoved[0] === topPos[0] + 40 && topMoved[1] === topPos[1] + 20, `${topPos} → ${topMoved}`); // press-anchored
   const bgPos = barWin.getPosition();
   await barWin.webContents.executeJavaScript(`(() => {
     document.getElementById('top-headline').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 300, screenY: 10 }));
@@ -392,6 +392,7 @@ async function run({ app, getMainWin, state, windows }) {
   // refinement silently.
   const http = require('http');
   let mockSys = '';
+  let etaRequests = 0;
   const srv = http.createServer((req, res) => {
     let buf = '';
     req.on('data', (c) => (buf += c));
@@ -409,10 +410,13 @@ async function run({ app, getMainWin, state, windows }) {
             suggestions: [{ content: 'mock suggestion', cite }],
           });
         } else {
-          // eta shape: 77 minutes for every asked-about task
+          // eta shape: 77 minutes on the first request, 88 afterwards —
+          // distinguishes a scoped add-time refinement from a full-list sweep
+          etaRequests += 1;
+          const mins = etaRequests === 1 ? 77 : 88;
           const user = body.messages.find((m) => m.role === 'user');
           const ids = (JSON.parse(user.content).tasks || []).map((t) => t.id);
-          content = JSON.stringify({ tasks: ids.map((id) => ({ id, minutes: 77 })) });
+          content = JSON.stringify({ tasks: ids.map((id) => ({ id, minutes: mins })) });
         }
       } catch {}
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -427,9 +431,20 @@ async function run({ app, getMainWin, state, windows }) {
   await call('task:add', { title: 'AI estimated chore' }); // fresh unedited task
   await sleep(5000); // 1.5s config debounce + 2.5s add debounce + round-trip
   snap = await call('day:get');
-  const aiCount = snap.day.tasks.filter((t) => t.estimateMin === 77).length;
+  const aiCount = snap.day.tasks.filter((t) => t.estimateMin === 77 || t.estimateMin === 88).length;
   check('AI estimation applied through configured endpoint', aiCount >= 1, `${aiCount} task(s) at mock value`);
   check('AI refinement reopens the review after approval', snap.day.etaReviewed === false);
+
+  // scoped estimation: adding a task refines ONLY that task (88), the
+  // earlier tasks keep their first-pass estimates (77)
+  await call('task:add', { title: 'Scoped estimation check' });
+  await sleep(5000);
+  snap = await call('day:get');
+  const at88 = snap.day.tasks.filter((t) => t.estimateMin === 88);
+  const at77 = snap.day.tasks.filter((t) => t.estimateMin === 77);
+  check('add estimates only the new task',
+    at88.length === 1 && at88[0].title === 'Scoped estimation check' && at77.length >= 1,
+    `88s=${at88.length} 77s=${at77.length}`);
   const evLLM = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:etas")');
   check('llm:etas event surfaced', evLLM.length >= 1);
 

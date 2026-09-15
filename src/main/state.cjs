@@ -197,20 +197,25 @@ function createState(store, hooks = {}) {
    * Batch-refine ETAs for listed-but-unstarted tasks the user hasn't hand-set.
    * Debounced after task:add; also callable directly ("Refine with AI").
    */
-  function scheduleEtaRefinement(delayMs = 2500) {
+  function scheduleEtaRefinement(delayMs = 2500, onlyId = null) {
     if (!estimatorUsesAI()) return;
     clearTimeout(etaDebounce.timer);
-    etaDebounce.timer = setTimeout(runEtaRefinement, delayMs);
+    etaDebounce.onlyId = onlyId;
+    etaDebounce.timer = setTimeout(() => runEtaRefinement(false, etaDebounce.onlyId), delayMs);
     if (etaDebounce.timer.unref) etaDebounce.timer.unref();
   }
 
-  async function runEtaRefinement(manual = false) {
+  async function runEtaRefinement(manual = false, onlyId = null) {
     if (etaDebounce.inFlight || !estimatorUsesAI()) return;
     const day = today();
     // anything unfinished that the human has not hand-edited is fair game:
-    // the frontier keeps one task yellow, so red-only would often match nothing
+    // the frontier keeps one task yellow, so red-only would often match nothing.
+    // Auto runs after task:add estimate ONLY the new task; the full list is
+    // refined exclusively via the Refine with AI button (manual).
+    const only = manual ? null : onlyId ?? etaDebounce.onlyId ?? null;
+    etaDebounce.onlyId = null;
     const candidates = day.tasks.filter(
-      (t) => t.status !== 'green' && t.status !== 'white' && !t.estEdited
+      (t) => t.status !== 'green' && t.status !== 'white' && !t.estEdited && (!only || t.id === only)
     );
     if (!candidates.length) {
       if (manual) {
@@ -401,7 +406,7 @@ function createState(store, hooks = {}) {
         maintainIfAuto(day, Date.now()); // first-in-list flags itself in progress
       });
       touch();
-      scheduleEtaRefinement(); // heuristic lands first, AI refines when you pause
+      scheduleEtaRefinement(2500, task.id); // heuristic lands first; the AI estimates ONLY this task
       return { task, estimate: est };
     },
 

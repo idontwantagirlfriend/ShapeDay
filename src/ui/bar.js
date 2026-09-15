@@ -80,6 +80,11 @@ function setInteractive(on) {
   if (on === interactive) return;
   interactive = on;
   shapeday.call('overlay:setInteractive', { on });
+  if (!on && drag) {
+    // click-through re-enabled mid-press swallows the mouseup; end the drag
+    drag = null;
+    shapeday.call('overlay:drag', { end: true });
+  }
 }
 document.addEventListener('mousemove', (e) => {
   if (currentStyle !== 'top') return;
@@ -101,6 +106,7 @@ document.addEventListener('mousedown', (e) => {
   const fromGrip = !!e.target.closest('.strip-grip');
   if (!fromFloater && !fromGrip) return;
   drag = { sx: e.screenX, sy: e.screenY };
+  shapeday.call('overlay:drag', { begin: true, sx: e.screenX, sy: e.screenY });
 });
 document.addEventListener('mousemove', (e) => {
   if (drag && (e.screenX !== drag.sx || e.screenY !== drag.sy)) {

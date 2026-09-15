@@ -47,6 +47,7 @@ let dragState = null;
 document.querySelector('.toast').addEventListener('mousedown', (e) => {
   if (e.target.closest('button')) return;
   dragState = { sx: e.screenX, sy: e.screenY };
+  shapeday.call('overlay:drag', { begin: true, sx: e.screenX, sy: e.screenY });
 });
 document.addEventListener('mousemove', (e) => {
   if (dragState && (e.screenX !== dragState.sx || e.screenY !== dragState.sy)) {
