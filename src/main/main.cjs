@@ -87,6 +87,7 @@ let barWin = null;
 let toastWin = null;
 let tintWin = null;
 let dragShieldWin = null;
+let evalWin = null;
 let tray = null;
 let isQuitting = false;
 
@@ -180,6 +181,12 @@ function pump() {
     }
     if (ev.type === 'break-over' || ev.type === 'break-skipped') {
       if (toastWin) toastWin.hide();
+    }
+    if (ev.type === 'eval-prompt') {
+      if (evalWin) {
+        evalWin.showInactive();
+        evalWin.moveTop();
+      }
     }
   }
   syncOverlay(snap);
@@ -302,6 +309,7 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
   const out = fn(payload ?? {});
   store.flush();
   pump(); // every action is reflected immediately, not on the next second
+  if (kind === 'eval:respond' && evalWin && !evalWin.isDestroyed()) evalWin.hide();
   return out ?? { ok: true };
 });
 
@@ -323,6 +331,7 @@ if (!gotLock) {
     });
     tintWin = windows.createTint(); // tint first → bar/toast stay above it
     dragShieldWin = windows.createDragShield();
+    evalWin = windows.createEvalPop();
     barWin = windows.createBar();
     toastWin = windows.createToast();
 

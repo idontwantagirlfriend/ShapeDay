@@ -182,11 +182,21 @@ async function run({ app, getMainWin, state, windows }) {
   });
   check('toast size stable across drag + fit cycles', toastGrowth.ok, toastGrowth.why || '');
 
+  // 4b. halfway notice is a drawover window: appears on prompt, hides on answer
+  await sleep(300);
+  const evalW = windows.ALL.find((w) => w.webContents.getURL().includes('eval.html'));
+  check('halfway notice opens as a drawover window', evalW && evalW.isVisible());
+  await call('eval:respond', { response: 'ahead' });
+  await sleep(300);
+  check('halfway notice hides once answered', evalW && !evalW.isVisible());
+
   // 5. finish the second → 100% → 50% self-eval prompt
   await call('task:click', { id: snap.day.tasks[1].id });
   await sleep(1300);
   ev = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "eval-prompt")');
   check('self-evaluation prompts on the current task\'s pacing', ev.length >= 1, `${ev.length} prompt(s)`);
+  await call('eval:respond', { response: 'ahead' });
+  await sleep(200);
 
   // 6. right click = abort; click again = revive → red
   await call('task:add', { title: 'Read spec draft' });

@@ -37,7 +37,7 @@ async function run({ app, getMainWin, store, state, windows }) {
         createdAt: at(2, 28), startedAt: null, finishedAt: null, skippedAt: null, worked: [],
       },
       {
-        id: 'd4', title: 'Refactor store layer', status: 'white', estimateMin: 60,
+        id: 'd4', title: 'Investigate the estimation pipeline regression and write the findings memo for the team review', status: 'white', estimateMin: 60,
         createdAt: at(2, 27), startedAt: null, finishedAt: null, skippedAt: at(1, 5), worked: [],
       },
     ];

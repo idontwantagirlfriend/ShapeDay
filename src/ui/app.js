@@ -389,7 +389,7 @@ $$('.viz-scopes button').forEach((b) =>
   })
 );
 
-// day: crosshair hover. month: day-cell hover bubble. week: hover does nothing.
+// day: crosshair hover. month: day-cell hover bubble. week: task-block preview.
 $('#timeline').addEventListener('mousemove', (e) => {
   const canvas = $('#timeline');
   if (vizScope === 'day') {
@@ -401,11 +401,18 @@ $('#timeline').addEventListener('mousemove', (e) => {
     } else {
       hideVizBubble();
     }
+  } else if (vizScope === 'week') {
+    const hit = Timeline.hitTest(canvas, e.clientX, e.clientY);
+    if (hit?.kind === 'task' && hit.overflow) {
+      showWeekPreview(hit, e);
+    } else {
+      hideVizBubble();
+    }
   }
 });
 $('#timeline').addEventListener('mouseleave', () => {
   Timeline.hoverEnd();
-  if (vizScope === 'month') hideVizBubble();
+  if (vizScope !== 'day') hideVizBubble();
 });
 
 // week: click a task block for its description and times
@@ -442,6 +449,18 @@ function taskSubHtml(t) {
   const end = t.finishedAt ? fmtClock(t.finishedAt) : '—';
   return `<span class="dot s-${t.status}"></span>${escapeHtml(t.title)}` +
     `<span class="sub"><b>${escapeHtml(t.title)}</b><br>${start} → ${end}<br>est ${fmtMin(t.estimateMin)} · worked ${fmtMin(t.elapsedMin)}<br>status: ${t.status}</span>`;
+}
+
+/** Hover preview for a block whose wrapped text was ellipsized. */
+function showWeekPreview(hit, e) {
+  const bubble = $('#viz-bubble');
+  const start = hit.startedAt ? fmtClock(hit.startedAt) : '—';
+  const end = hit.finishedAt ? fmtClock(hit.finishedAt) : 'running';
+  bubble.innerHTML =
+    `<h5>${escapeHtml(hit.title)}</h5>` +
+    `<div class="meta">${hit.date} · ${start} → ${end}</div>`;
+  bubble.hidden = false;
+  placeBubble(bubble, e);
 }
 
 function showWeekTaskBubble(hit, e) {
@@ -820,24 +839,6 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && settingsEl.open) settingsEl.open = false;
 });
-
-// ---------- task halfway check (left-side popup) ----------
-shapeday.onEvent((ev) => {
-  if (ev.type === 'eval-prompt') {
-    const t = ev.data?.title;
-    $('#eval-title').textContent = t ? `Half of “${t.length > 26 ? t.slice(0, 25) + '…' : t}”` : 'Halfway';
-    const worked = Math.round(ev.data?.workedMin ?? 0);
-    const est = Math.round(ev.data?.estimateMin ?? 0);
-    $('#eval-text').textContent = `${worked}m in on a ${est}m task — how's the pace?`;
-    $('#eval-modal').hidden = false;
-  }
-});
-$$('#eval-modal [data-resp]').forEach((b) =>
-  b.addEventListener('click', () => {
-    shapeday.call('eval:respond', { response: b.dataset.resp });
-    $('#eval-modal').hidden = true;
-  })
-);
 
 // ---------- the tick ----------
 function onTick(s) {

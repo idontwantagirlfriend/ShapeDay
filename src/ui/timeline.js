@@ -385,6 +385,20 @@
     return { ctx, W, H: h };
   }
 
+  /** Greedy word wrap; returns lines and whether anything was cut. */
+  function wrapText(ctx, text, maxW) {
+    const words = String(text).split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const probe = cur ? `${cur} ${w}` : w;
+      if (ctx.measureText(probe).width <= maxW || !cur) cur = probe;
+      else { lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
   /** Fill color for a task block by status. */
   function taskFill(status) {
     return {
@@ -468,15 +482,28 @@
         const by = yOf(cursor) + 1;
         ctx.fillStyle = taskFill(t.status);
         ctx.fillRect(x + 5, by, colW - 10, bh);
-        if (bh >= 15 && colW > 46) {
-          ctx.fillStyle = 'rgba(10, 12, 16, 0.85)';
+        // wrapped title inside the block; ellipsized when it can't fit
+        let overflow = false;
+        if (bh >= 14 && colW > 40) {
+          ctx.font = '10px system-ui';
           ctx.textAlign = 'left';
-          ctx.fillText(t.title.slice(0, Math.floor((colW - 14) / 5.4)), x + 8, yOf(cursor) + 4);
+          ctx.fillStyle = 'rgba(10, 12, 16, 0.85)';
+          const maxW = colW - 16;
+          const lines = wrapText(ctx, t.title, maxW);
+          const lineH = 12;
+          const maxLines = Math.max(1, Math.floor((bh - 4) / lineH));
+          const show = lines.slice(0, maxLines);
+          if (lines.length > maxLines) {
+            overflow = true;
+            const last = show[maxLines - 1];
+            show[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + '…';
+          }
+          show.forEach((ln, i) => ctx.fillText(ln, x + 8, by + 5 + i * lineH));
         }
         hits.push({
           kind: 'task',
           x: x + 5, y: by, w: colW - 10, h: bh,
-          date, title: t.title, status: t.status,
+          date, title: t.title, status: t.status, overflow,
           startedAt: t.startedAt, finishedAt: t.finishedAt,
           estimateMin: t.estimateMin, elapsedMin: t.elapsedMin,
         });
@@ -552,14 +579,34 @@
 
       ctx.textAlign = 'left';
       ctx.fillStyle = d && d.tasks.length ? 'rgba(10, 12, 16, 0.9)' : '#9aa1ad';
-      ctx.fillText(String(dayNum), x + 8, y + 12);
-      if (d && d.overworkMin >= OVERWORK_THRESHOLD_MIN) {
-        ctx.fillStyle = 'rgba(255, 235, 235, 0.95)';
-        ctx.fillText(`+${Math.round(d.overworkMin)}m over`, x + 8, y + cellH - 12);
-      } else if (d && d.tasks.length) {
-        const done = d.tasks.filter((t) => t.status === 'green').length;
-        ctx.fillStyle = 'rgba(10, 12, 16, 0.75)';
-        ctx.fillText(`${done}/${d.tasks.length}`, x + 8, y + cellH - 12);
+      ctx.font = '11px system-ui';
+      ctx.fillText(String(dayNum), x + 7, y + 11);
+      // the day's task headlines, tiny, truncated; hover carries the detail
+      if (d && d.tasks.length) {
+        ctx.font = '9px system-ui';
+        const lineH = 11;
+        const rows = Math.max(0, Math.floor((cellH - 26) / lineH));
+        let row = 0;
+        for (const t of d.tasks) {
+          if (row >= rows) break;
+          ctx.fillStyle = taskFill(t.status);
+          ctx.fillRect(x + 7, y + 19 + row * lineH, 5, 5);
+          ctx.fillStyle = 'rgba(10, 12, 16, 0.8)';
+          let line = t.title;
+          while (ctx.measureText(line + '…').width > cellW - 26 && line.length > 1) line = line.slice(0, -1);
+          if (line !== t.title) line += '…';
+          ctx.fillText(line, x + 15, y + 24 + row * lineH);
+          row++;
+        }
+        if (d.tasks.length > rows && rows > 0) {
+          ctx.fillStyle = 'rgba(10, 12, 16, 0.55)';
+          ctx.fillText(`+${d.tasks.length - rows}`, x + 15, y + 24 + (rows - 1) * lineH + lineH);
+        }
+        if (d.overworkMin >= OVERWORK_THRESHOLD_MIN) {
+          ctx.fillStyle = 'rgba(255, 235, 235, 0.95)';
+          ctx.font = '9px system-ui';
+          ctx.fillText(`+${Math.round(d.overworkMin)}m`, x + cellW - 34, y + 11);
+        }
       }
       ctx.textAlign = 'center';
       cell++;

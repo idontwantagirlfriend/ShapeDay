@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en" class="overlay">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>ShapeDay halfway</title>
+  <link rel="stylesheet" href="ui.css" />
+</head>
+<body>
+  <div class="evalwin" id="evalwin">
+    <h3 id="eval-title">Halfway</h3>
+    <p id="eval-text">Half of this task is done — how's the pace?</p>
+    <div class="opts">
+      <button data-resp="ahead">Ahead<span>Hooray.</span></button>
+      <button data-resp="on-track" class="primary">On track<span>Keep it up.</span></button>
+      <button data-resp="behind">Behind<span>Extend the ETA.</span></button>
+    </div>
+  </div>
+  <script src="eval.js"></script>
+</body>
+</html>
