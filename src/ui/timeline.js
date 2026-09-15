@@ -608,11 +608,24 @@
           ctx.fillText(`+${Math.round(d.overworkMin)}m`, x + cellW - 34, y + 11);
         }
       }
+      hits.push({
+        kind: 'day',
+        x, y, w: cellW, h: cellH,
+        date,
+        tasks: (d?.tasks || []).map((t) => ({
+          title: t.title, status: t.status,
+          startedAt: t.startedAt, finishedAt: t.finishedAt,
+          estimateMin: t.estimateMin, elapsedMin: t.elapsedMin,
+        })),
+        summary: d?.summary || '',
+        overworkMin: d?.overworkMin ?? 0,
+      });
       ctx.textAlign = 'center';
       cell++;
       cursorDate.setDate(cursorDate.getDate() + 1);
     }
+    canvas._hits = hits;
   }
 
-  window.Timeline = { render, hover, hoverEnd, renderWeek, renderMonth };
+  window.Timeline = { render, hover, hoverEnd, renderWeek, renderMonth, hitTest };
 })();

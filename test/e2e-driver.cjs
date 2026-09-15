@@ -596,6 +596,48 @@ async function run({ app, getMainWin, state, windows }) {
     return results.every(Boolean);
   })()`);
   check('canvas pixels unchanged by mouseleave in week/month', edgeFlicker === true);
+
+  // hover-to-display: synthetic mousemove over real hits must open the bubbles
+  const hoverProbe = await win.webContents.executeJavaScript(`(async () => {
+    const canvas = document.getElementById('timeline');
+    const bubble = document.getElementById('viz-bubble');
+    const out = {};
+    // week: rename one task long so its block provably overflows
+    const snapNow = await shapeday.call('day:get');
+    await shapeday.call('task:rename', {
+      id: snapNow.day.tasks[0].id,
+      title: 'Investigate the estimation pipeline regression across every surface, interview the reviewers, write the findings memo, circulate it for comments, and file the follow-ups before the next planning cycle begins',
+    });
+    document.querySelector('[data-viz=week]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const all = (canvas._hits || []).filter((h) => h.kind === 'task');
+    const wh = all.find((h) => h.overflow);
+    if (wh) {
+      const r = canvas.getBoundingClientRect();
+      const cx = r.left + wh.x + wh.w / 2, cy = r.top + wh.y + Math.min(wh.h / 2, 8);
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
+      await new Promise((r2) => setTimeout(r2, 120));
+      out.week = !bubble.hidden && bubble.textContent.length > 0;
+    } else out.week = 'no-task-hit';
+    // month: center of a day cell with tasks
+    document.querySelector('[data-viz=month]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.length);
+    if (dh) {
+      const r = canvas.getBoundingClientRect();
+      const cx = r.left + dh.x + dh.w / 2, cy = r.top + dh.y + dh.h / 2;
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
+      await new Promise((r2) => setTimeout(r2, 120));
+      out.month = !bubble.hidden && bubble.querySelectorAll('.taskline').length > 0;
+      out.cascaded = bubble.querySelectorAll('.taskline .sub').length > 0;
+    } else out.month = 'no-day-hit';
+    return out;
+  })()`);
+  check('week hover opens the detail bubble',
+    hoverProbe.week === true || (typeof hoverProbe.week === 'string' && hoverProbe.week.includes('no-task')),
+    JSON.stringify(hoverProbe.week));
+  check('month hover opens the task list with cascaded detail',
+    hoverProbe.month === true && hoverProbe.cascaded === true, JSON.stringify(hoverProbe));
   const repMonth = await call('report:get', { scope: 'month' });
   const repYear = await call('report:get', { scope: 'year' });
   check('month and year report scopes work',
