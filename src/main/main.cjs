@@ -202,12 +202,17 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
     return { ok: true };
   }
   if (kind === 'overlay:toastHeight') {
-    // the toast sizes to its content; the bottom edge stays pinned
+    // the toast sizes to its content; the bottom edge stays pinned.
+    // Never resize mid-drag (setBounds would fight the drag's setPosition),
+    // and ignore sub-2px churn so rounding can never accumulate.
     if (toastWin && !toastWin.isDestroyed() && _e.sender === toastWin.webContents) {
+      const dragging = overlayDrags.get(_e.sender.id)?.active;
       const h = Math.max(120, Math.min(400, Math.round(Number(payload?.h) || 170)));
       const [x, y] = toastWin.getPosition();
       const [, oldH] = toastWin.getSize();
-      if (h !== oldH) toastWin.setBounds({ x, y: y + (oldH - h), width: 380, height: h });
+      if (!dragging && Math.abs(h - oldH) >= 2) {
+        toastWin.setBounds({ x, y: y + (oldH - h), width: 380, height: h });
+      }
     }
     return { ok: true };
   }

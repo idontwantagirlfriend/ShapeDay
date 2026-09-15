@@ -24,12 +24,15 @@ function show(mode_) {
   fitWindow();
 }
 
-/** Tell the main process this window's true height; it never scrolls. */
+/** Tell the main process the CONTENT height; it never scrolls, never loops:
+ *  the measured element has no viewport-tied height, so re-measuring after
+ *  a resize returns the same number and the cycle terminates. */
 function fitWindow() {
-  const h = document.querySelector('.toast')?.scrollHeight ?? 170;
+  const inner = document.querySelector('.toast-inner');
+  const h = inner ? Math.ceil(inner.getBoundingClientRect().height) + 2 : 170; // +2: shell border
   if (h !== fitWindow._last) {
     fitWindow._last = h;
-    shapeday.call('overlay:toastHeight', { h: Math.ceil(h) + 2 });
+    shapeday.call('overlay:toastHeight', { h });
   }
 }
 

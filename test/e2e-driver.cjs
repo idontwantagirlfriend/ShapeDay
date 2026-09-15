@@ -136,6 +136,39 @@ async function run({ app, getMainWin, state, windows }) {
   }
   check('break toast fits its content without scrolling', fits.ok);
 
+  // regression: dragging the toast used to grow it (+2px per fit cycle,
+  // measurement mirroring the 100vh shell). Size must be stable across
+  // repeated fits AND a synthetic drag storm.
+  const toastGrowth = await win.webContents.executeJavaScript('0').then(async () => {
+    const t = toast();
+    if (!t) return { ok: false, why: 'no toast window' };
+    t.showInactive();
+    // let the first legitimate fit-to-content converge, then measure
+    await new Promise((r) => setTimeout(r, 800));
+    const size0 = t.getSize().join('x');
+    // simulate what dragging does: move events + a fit after each
+    await t.webContents.executeJavaScript(`(async () => {
+      for (let i = 0; i < 12; i++) {
+        await shapeday.call('overlay:drag', { sx: 600 + i, sy: 400 + i });
+        await shapeday.call('overlay:drag', { end: true });
+        // trigger the fit path the way show()/propose does
+        document.dispatchEvent(new Event('x'));
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      // force repeated real fit cycles at the measured height: convergent
+      const inner = document.querySelector('.toast-inner');
+      const realH = Math.ceil(inner.getBoundingClientRect().height) + 2;
+      for (let i = 0; i < 6; i++) {
+        await shapeday.call('overlay:toastHeight', { h: realH });
+      }
+      return true;
+    })()`);
+    await new Promise((r) => setTimeout(r, 300));
+    const size1 = t.getSize().join('x');
+    return { ok: size0 === size1, why: `${size0} -> ${size1}` };
+  });
+  check('toast size stable across drag + fit cycles', toastGrowth.ok, toastGrowth.why || '');
+
   // 5. finish the second → 100% → 50% self-eval prompt
   await call('task:click', { id: snap.day.tasks[1].id });
   await sleep(1300);

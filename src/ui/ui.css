@@ -651,12 +651,15 @@ html.overlay, html.overlay body { background: transparent; }
 .floater .fl-grip:active { cursor: grabbing; }
 
 .toast {
-  width: 100%; height: 100vh;
-  display: flex; flex-direction: column; gap: 12px;
-  padding: 18px;
+  width: 100%; height: 100vh; /* visual shell only — never measured */
   background: rgba(30, 33, 40, 0.97);
   border: 1px solid var(--line);
   border-radius: 14px;
+}
+/* the measured content: no height rule, so it can never mirror the window */
+.toast-inner {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px;
 }
 .toast { cursor: grab; }
 .toast:active { cursor: grabbing; }
