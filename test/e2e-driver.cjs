@@ -186,6 +186,18 @@ async function run({ app, getMainWin, state, windows }) {
   await sleep(300);
   const evalW = windows.ALL.find((w) => w.webContents.getURL().includes('eval.html'));
   check('halfway notice opens as a drawover window', evalW && evalW.isVisible());
+  await sleep(700); // let the fit-to-content resize land
+  const evalFits = await (async () => {
+    if (!evalW) return false;
+    const contentH = await evalW.webContents.executeJavaScript(
+      "document.querySelector('.evalwin-inner').getBoundingClientRect().height"
+    );
+    const [, winH] = evalW.getContentSize();
+    const [x, y] = evalW.getPosition();
+    const wa = require('electron').screen.getPrimaryDisplay().workArea;
+    return winH >= contentH && x >= wa.x + wa.width - 320 && y >= wa.y + wa.height - winH - 20;
+  })();
+  check('halfway notice fits its content, bottom-right anchored', evalFits);
   await call('eval:respond', { response: 'ahead' });
   await sleep(300);
   check('halfway notice hides once answered', evalW && !evalW.isVisible());

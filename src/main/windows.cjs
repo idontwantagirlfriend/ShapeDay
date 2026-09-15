@@ -186,15 +186,15 @@ function createDragShield() {
   return win;
 }
 
-/** Halfway-check popup: a drawover card pinned to the left edge. */
+/** Halfway-check popup: a drawover card in the bottom-right corner. */
 function createEvalPop() {
   const { workArea } = screen.getPrimaryDisplay();
-  const W = 300, H = 230;
+  const W = 300, H = 240;
   const win = track(
     new BrowserWindow({
       width: W, height: H,
-      x: workArea.x + 16,
-      y: workArea.y + Math.round(workArea.height * 0.28),
+      x: workArea.x + workArea.width - W - 16,
+      y: workArea.y + workArea.height - H - 16,
       frame: false, transparent: true, resizable: false, maximizable: false,
       skipTaskbar: true, alwaysOnTop: true, focusable: true, hasShadow: false,
       show: false,

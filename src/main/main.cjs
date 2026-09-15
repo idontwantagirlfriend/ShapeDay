@@ -184,6 +184,10 @@ function pump() {
     }
     if (ev.type === 'eval-prompt') {
       if (evalWin) {
+        // re-anchor to the bottom-right each time (display layout may change)
+        const { workArea } = require('electron').screen.getPrimaryDisplay();
+        const [W, H] = evalWin.getSize();
+        evalWin.setPosition(workArea.x + workArea.width - W - 16, workArea.y + workArea.height - H - 16);
         evalWin.showInactive();
         evalWin.moveTop();
       }
@@ -271,6 +275,17 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
   if (kind === 'overlay:dragEnd') {
     for (const drag of overlayDrags.values()) drag.active = false;
     lowerDragShield();
+    return { ok: true };
+  }
+  if (kind === 'overlay:evalHeight') {
+    if (evalWin && !evalWin.isDestroyed() && _e.sender === evalWin.webContents) {
+      const h = Math.max(150, Math.min(460, Math.round(Number(payload?.h) || 240)));
+      const [x, y] = evalWin.getPosition();
+      const [, oldH] = evalWin.getSize();
+      if (Math.abs(h - oldH) >= 2) {
+        evalWin.setBounds({ x, y: y + (oldH - h), width: 300, height: h }); // bottom pinned
+      }
+    }
     return { ok: true };
   }
   if (kind === 'overlay:drag') {

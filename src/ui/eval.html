@@ -7,13 +7,15 @@
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
-  <div class="evalwin" id="evalwin">
-    <h3 id="eval-title">Halfway</h3>
-    <p id="eval-text">Half of this task is done — how's the pace?</p>
-    <div class="opts">
-      <button data-resp="ahead">Ahead<span>Hooray.</span></button>
-      <button data-resp="on-track" class="primary">On track<span>Keep it up.</span></button>
-      <button data-resp="behind">Behind<span>Extend the ETA.</span></button>
+  <div class="evalwin">
+    <div class="evalwin-inner">
+      <h3 id="eval-title">Halfway</h3>
+      <p id="eval-text">Half of this task is done — how's the pace?</p>
+      <div class="opts">
+        <button data-resp="ahead">Ahead<span>Hooray.</span></button>
+        <button data-resp="on-track" class="primary">On track<span>Keep it up.</span></button>
+        <button data-resp="behind">Behind<span>Extend the ETA.</span></button>
+      </div>
     </div>
   </div>
   <script src="eval.js"></script>
