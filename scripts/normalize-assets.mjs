@@ -112,12 +112,16 @@ async function main() {
       console.log(`  ? ${raw} — no slot matches (name it icon/logo/tray…) — ignored`);
       continue;
     }
-    // largest matched slot wins the file; others reuse the same source
-    const primary = which.find((w) => !w.preferLarge) || which[0];
     try {
       const img = await Jimp.read(await readFile(path.join(RAW, raw)));
-      if (!sources.has(primary.file)) sources.set(primary.file, img);
-      for (const w of which) if (!sources.has(w.file)) sources.set(w.file, img);
+      for (const w of which) {
+        // several files may match a slot (logo@128/@256/@512): the largest
+        // area wins; the slot renders at its own canonical size anyway
+        const cur = sources.get(w.file);
+        if (!cur || img.width * img.height > cur.width * cur.height) {
+          sources.set(w.file, img);
+        }
+      }
       console.log(`  + ${raw} → ${which.map((w) => w.file).join(', ')}`);
     } catch (e) {
       console.warn(`  ! ${raw} unreadable: ${e.message}`);
@@ -131,7 +135,10 @@ async function main() {
     await mkdir(path.dirname(outPath), { recursive: true });
 
     if (slot.derived === 'icon') {
-      const src = sources.get('assets/icon.png') || (await placeholder(512, 'icon'));
+      const src =
+        sources.get('assets/icon.png') ||
+        sources.get('assets/logo.png') || // the brand logo doubles as the icon
+        (await placeholder(512, 'icon'));
       const buf = await buildIco(await renderSquare(src, 512));
       await writeFile(outPath, buf);
       manifest.slots.push(slotEntry(slot, buf.length, 'derived'));
@@ -139,16 +146,24 @@ async function main() {
       continue;
     }
 
-    // Fallback chain: this slot's own raw art → the icon's raw art → placeholder.
+    // Fallback chain: this slot's own raw art → the icon's raw art → the
+    // logo's raw art (the brand logo doubles as the app icon) → placeholder.
     const kind = /tray/.test(slot.file) ? 'tray' : 'icon';
     const fromRaw = sources.has(slot.file);
     const src =
       sources.get(slot.file) ||
       sources.get('assets/icon.png') ||
+      sources.get('assets/logo.png') ||
       (await placeholder(slot.size, kind));
     const buf = await encodeBudgeted(src, slot.size, slot.budget, slot.file);
     await writeFile(outPath, buf);
-    const origin = fromRaw ? 'raw' : sources.has('assets/icon.png') ? 'icon-fallback' : 'placeholder';
+    const origin = fromRaw
+      ? 'raw'
+      : sources.has('assets/icon.png')
+        ? 'icon-fallback'
+        : sources.has('assets/logo.png')
+          ? 'logo-fallback'
+          : 'placeholder';
     manifest.slots.push(slotEntry(slot, buf.length, origin));
     console.log(`  = ${slot.file} (${buf.length} bytes, ${slot.size}px, ${origin})`);
   }

@@ -1,43 +1,43 @@
 {
-  "generatedAt": "2026-09-14T03:03:14.087Z",
+  "generatedAt": "2026-09-15T02:33:06.184Z",
   "slots": [
     {
       "file": "assets/icon.png",
       "canonicalSize": 512,
       "budgetBytes": 98304,
-      "bytes": 6251,
-      "origin": "placeholder",
+      "bytes": 14894,
+      "origin": "logo-fallback",
       "naming": "raw filename matching /icon/i"
     },
     {
       "file": "assets/tray.png",
       "canonicalSize": 32,
       "budgetBytes": 8192,
-      "bytes": 359,
-      "origin": "placeholder",
+      "bytes": 539,
+      "origin": "logo-fallback",
       "naming": "raw filename matching /tray|menu/i"
     },
     {
       "file": "assets/logo.png",
       "canonicalSize": 512,
       "budgetBytes": 65536,
-      "bytes": 6251,
-      "origin": "placeholder",
+      "bytes": 14894,
+      "origin": "raw",
       "naming": "raw filename matching /logo|mark|word/i"
     },
     {
       "file": "assets/logo@2x.png",
       "canonicalSize": 1024,
       "budgetBytes": 131072,
-      "bytes": 14625,
-      "origin": "placeholder",
+      "bytes": 43970,
+      "origin": "raw",
       "naming": "raw filename matching /logo|mark|word/i"
     },
     {
       "file": "assets/icon.ico",
       "canonicalSize": "16–256 (ico)",
       "budgetBytes": null,
-      "bytes": 14278,
+      "bytes": 13349,
       "origin": "derived",
       "naming": "derived from icon.png"
     }

@@ -99,6 +99,7 @@ header {
   padding: 14px 20px 10px;
 }
 header .brand { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.02em; }
+.brand-logo { width: 22px; height: 22px; flex: none; }
 header .brand span { color: var(--accent); }
 header .day { color: var(--text-dim); font-size: 0.9rem; }
 
