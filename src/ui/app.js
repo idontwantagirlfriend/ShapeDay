@@ -543,6 +543,12 @@ async function loadReport() {
   const r = await shapeday.call('report:get', { scope: sumScope });
   if (!r || r.error) return;
 
+  // the regen affordance exists only in AI mode with a configured endpoint
+  const regenBtn = $('#btn-resummarize');
+  if (regenBtn) {
+    regenBtn.hidden = !(snap.settings.summaryMode === 'ai' && llmConfigured(snap.settings));
+  }
+
   const metrics = $('#sum-metrics');
   metrics.innerHTML = '';
   for (const [k, label] of Object.entries(METRIC_LABELS)) {

@@ -426,6 +426,19 @@ async function run({ app, getMainWin, state, windows }) {
   }
   const repEvents = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:report").length');
   check('re-summarize regenerates the AI summary', repEvents > beforeRep);
+  const regenVisible = await win.webContents.executeJavaScript(`(async () => {
+    document.querySelector('[data-view=sum]').click();
+    await new Promise((r) => setTimeout(r, 400));
+    const inAI = document.getElementById('btn-resummarize').hidden;
+    await shapeday.call('settings:set', { summaryMode: 'template' });
+    await new Promise((r) => setTimeout(r, 400));
+    document.querySelector('.sum-scopes [data-scope=day]').click();
+    await new Promise((r) => setTimeout(r, 400));
+    const inTemplate = document.getElementById('btn-resummarize').hidden;
+    return { inAI, inTemplate }; // inAI should be false (shown), inTemplate true
+  })()`);
+  check('regen button shows in AI mode, hidden in template mode',
+    regenVisible.inAI === false && regenVisible.inTemplate === true, JSON.stringify(regenVisible));
   const dbg = await win.webContents.executeJavaScript('window.__events.map(e => e.type + (e.data && e.data.error ? ":" + e.data.error : ""))');
   console.log('EVENTS:', JSON.stringify(dbg));
   srv.close();

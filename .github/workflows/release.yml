@@ -25,7 +25,7 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: npx electron-builder --win nsis portable
+        run: npx electron-builder --win nsis portable --publish never # artifacts attach via the release step below
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
