@@ -575,6 +575,10 @@ function createState(store, hooks = {}) {
       if (patch && 'overlayStyle' in patch) {
         allowed.overlayStyle = patch.overlayStyle === 'floater' ? 'floater' : 'top';
       }
+      if (patch && 'tintStrength' in patch) {
+        const v = Math.round(Number(patch.tintStrength));
+        allowed.tintStrength = Number.isFinite(v) ? Math.max(0, Math.min(200, v)) : 100;
+      }
       if (patch && typeof patch.backgroundImage === 'string') {
         allowed.backgroundImage = patch.backgroundImage.slice(0, 400);
       }

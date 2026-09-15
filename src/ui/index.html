@@ -55,7 +55,14 @@
                 <option value="top">Top bar</option>
                 <option value="floater">Floater</option>
               </select>
-              <span class="help" data-help="Top bar: full-width strip, click-through everywhere except the center drag grip; its background is the day progress. Floater: the corner widget with clock, draggable anywhere on the capsule.">i</span>
+              <span class="help" data-help="Top bar: full-width strip, click-through everywhere except the center drag grip; its background is the day progress. Floater: the rounded capsule (headline + clock), draggable from its ⋯ grip.">i</span>
+            </span>
+          </label>
+          <label>Tint strength
+            <span class="ctl">
+              <input type="range" id="set-tint" min="0" max="200" step="10" />
+              <span class="range-val" id="tint-val"></span>
+              <span class="help" data-help="Strength of the overwork screen tint. 100 is the default curve; 0 disables the tint entirely; 200 doubles it.">i</span>
             </span>
           </label>
           <label>Background

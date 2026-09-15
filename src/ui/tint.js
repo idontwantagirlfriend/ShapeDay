@@ -13,7 +13,8 @@ function apply(s) {
     return;
   }
   const color = Overwork.stageColor(m);
-  const alpha = Overwork.tintAlpha(m);
+  const strength = Math.max(0, Math.min(2, (s.settings.tintStrength ?? 100) / 100));
+  const alpha = Math.min(1, Overwork.tintAlpha(m) * strength); // 0 hides, 200 doubles
   // hex → rgba
   const r = parseInt(color.slice(1, 3), 16);
   const g = parseInt(color.slice(3, 5), 16);

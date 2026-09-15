@@ -589,6 +589,12 @@ $('#set-overlay-style').addEventListener('change', (e) => {
   shapeday.call('settings:set', { overlayStyle: e.target.value });
 });
 
+// ---------- tint strength ----------
+$('#set-tint').addEventListener('input', (e) => {
+  $('#tint-val').textContent = `${e.target.value}%`;
+  shapeday.call('settings:set', { tintStrength: +e.target.value });
+});
+
 // ---------- background customization ----------
 $('#bg-choose').addEventListener('click', () => shapeday.call('background:choose'));
 $('#bg-clear').addEventListener('click', () => shapeday.call('settings:set', { backgroundImage: '' }));
@@ -684,6 +690,10 @@ function renderSettings() {
   put('#set-llm-model', s.llm?.model || '');
   put('#set-ow-opacity', s.overlayOpacity ?? 92);
   put('#set-overlay-style', s.overlayStyle === 'floater' ? 'floater' : 'top');
+  put('#set-tint', s.tintStrength ?? 100);
+  if (document.activeElement !== $('#set-tint')) {
+    $('#tint-val').textContent = `${s.tintStrength ?? 100}%`;
+  }
   if (document.activeElement !== $('#set-ow-opacity')) {
     $('#ow-op-val').textContent = `${s.overlayOpacity ?? 92}%`;
   }

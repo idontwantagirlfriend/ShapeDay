@@ -31,7 +31,7 @@ Always-on-top bar (draggable, hand cursor, adjustable opacity), break toast with
 Any OpenAI-compatible `chat/completions` endpoint: Base URL + Model (+ key if required) in ⚙, Test button verifies. Prompts are editable files in the data dir's `prompts/` (re-read per call; unedited copies refresh from the bundled defaults):
 
 - `prompts/eta.txt` — reply contract `{"tasks":[{"id","minutes"}]}`
-- `prompts/summary.txt` — reply contract `{"recap","suggestions":[{"content","cite"}]}`; `{history_reports}` is filled with the past three days
+- `prompts/{daily,weekly,monthly,yearly}_summary.txt` — reply contract `{"recap","suggestions":[{"content","cite"}]}`; the daily prompt's `{history_reports}` is filled with the past three days
 
 ## Data & privacy
 
