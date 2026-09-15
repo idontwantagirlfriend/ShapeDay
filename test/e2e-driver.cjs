@@ -173,7 +173,7 @@ async function run({ app, getMainWin, state, windows }) {
   await call('task:click', { id: snap.day.tasks[1].id });
   await sleep(1300);
   ev = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "eval-prompt")');
-  check('50% self-evaluation prompted', ev.length === 1);
+  check('self-evaluation prompts on the current task\'s pacing', ev.length >= 1, `${ev.length} prompt(s)`);
 
   // 6. right click = abort; click again = revive → red
   await call('task:add', { title: 'Read spec draft' });

@@ -186,6 +186,32 @@ test('dayProgress measured in planned units; white excluded', () => {
   assert.ok(Math.abs(p.ratio - 10 / 70) < 1e-9);
 });
 
+test('dayProgress is continuous: partial credit for the task under way', () => {
+  // her example: five 2h tasks, two done, 1h into the third => 50%, not 40%
+  const day = Model.newDay('2026-09-15');
+  for (let i = 0; i < 5; i++) day.tasks.push(Model.newTask(`task ${i + 1}`, 120));
+  const T = Date.now() - 3 * 3600000;
+  for (const t of day.tasks.slice(0, 2)) {
+    t.status = 'green';
+    t.startedAt = T;
+    t.finishedAt = T + 7200000;
+    t.worked = [{ start: T, end: T + 7200000 }];
+  }
+  const third = day.tasks[2];
+  third.status = 'yellow';
+  third.startedAt = T;
+  third.worked = [{ start: T, end: T + 3600000 }]; // 1h worked
+  const p = Model.dayProgress(day, T + 3600000);
+  assert.strictEqual(p.total, 600);
+  assert.strictEqual(p.done, 300); // 240 finished + 60 partial
+  assert.ok(Math.abs(p.ratio - 0.5) < 1e-9, `ratio ${p.ratio}`);
+
+  // overrun never inflates: 3h worked on a 120min task still credits 120
+  third.worked = [{ start: T, end: T + 3 * 3600000 }];
+  const q = Model.dayProgress(day, T + 3 * 3600000);
+  assert.strictEqual(q.done, 360);
+});
+
 // ---------- overwork: exact spec colors ----------
 
 test('stageColor follows the PROJECT.md tint spec at every boundary', () => {

@@ -108,11 +108,19 @@ function createState(store, hooks = {}) {
       logged(day, () => maintainIfAuto(day, now));
       store.flush();
     }
-    if (!day.selfEval) {
-      const p = Model.dayProgress(day);
-      if (p.total >= 20 && p.ratio >= 0.5) {
-        day.selfEval = { promptedAt: now, response: null };
-        emit('eval-prompt', { ratio: p.ratio });
+    // Halfway notice: the pacing of the CURRENT task, not half the day's
+    // workload. Fires when the task under way crosses half its estimate
+    // (or finishes, if it never lingered there) — once per task.
+    if (!day.selfEval) day.selfEval = { promptedAt: null, response: null };
+    const active = Model.activeTask(day);
+    const evalTask = active || [...(day.tasks || [])].reverse().find((t) => t.status === 'green' && !t.evalPrompted);
+    if (evalTask && !evalTask.evalPrompted) {
+      const worked = TimeUtil.taskElapsedMin(evalTask, now);
+      const halfway = evalTask.estimateMin > 0 && worked * 2 >= evalTask.estimateMin;
+      if (halfway || evalTask.status === 'green') {
+        evalTask.evalPrompted = true;
+        day.selfEval.promptedAt = now;
+        emit('eval-prompt', { taskId: evalTask.id, title: evalTask.title, workedMin: worked, estimateMin: evalTask.estimateMin });
       }
     }
     return { snapshot: snapshot(now), events: drain() };

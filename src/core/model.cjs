@@ -64,12 +64,25 @@
     return (day.tasks || []).find((t) => t.status === 'red') || null;
   }
 
-  function dayProgress(day) {
-    // Progress measured in planned (estimated) units, per PROJECT.md:
-    // AI estimates ETA, human reviews, progress bar tracks delivery of plan.
+  function dayProgress(day, nowMs) {
+    // Continuous progress in planned units: finished tasks count fully, the
+    // task under way counts its worked minutes (capped at its estimate, so
+    // overrun never inflates progress). Two of five 2h tasks done plus 1h
+    // into the third reads 5h/10h = 50%, ticking in real time — not 40%.
     const tasks = day.tasks || [];
     const total = tasks.filter((t) => t.status !== 'white').reduce((s, t) => s + t.estimateMin, 0);
-    const done = tasks.filter((t) => t.status === 'green').reduce((s, t) => s + t.estimateMin, 0);
+    const now = nowMs ?? Date.now();
+    let done = 0;
+    for (const t of tasks) {
+      if (t.status === 'white') continue;
+      if (t.status === 'green') {
+        done += t.estimateMin;
+        continue;
+      }
+      let ms = 0;
+      for (const seg of t.worked || []) ms += Math.max(0, (seg.end ?? now) - seg.start);
+      done += Math.min(ms / 60000, t.estimateMin);
+    }
     return { total, done, ratio: total > 0 ? done / total : 0 };
   }
 
