@@ -28,6 +28,23 @@ function remainingMinutes(s) {
   return Math.max(0, Math.ceil((s.bounds.end - s.now) / 60000));
 }
 
+/** The overlay's progress tracks the CURRENT task (worked ÷ its estimate),
+ *  ticking in real time; a break shows its own countdown share; only an
+ *  idle overlay falls back to the day's workload. */
+function progressFraction(s) {
+  if (s.active) {
+    let ms = 0;
+    for (const seg of s.active.worked || []) ms += Math.max(0, (seg.end ?? s.now) - seg.start);
+    const est = Math.max(1, s.active.estimateMin) * 60000;
+    return Math.min(1, ms / est);
+  }
+  if (s.break) {
+    const total = s.break.plannedEnd - s.break.startedAt;
+    return total > 0 ? Math.min(1, Math.max(0, (s.now - s.break.startedAt) / total) ) : 0;
+  }
+  return s.progress.ratio;
+}
+
 function headlineText(s) {
   if (s.active) return s.active.title;
   if (s.break) return 'on break';
@@ -55,7 +72,7 @@ shapeday.onTick((s) => {
     els.top.headline.textContent = headlineText(s);
     els.top.time.textContent = `${fmt(remainingMinutes(s))} left`;
     // the entire strip IS the progress bar
-    els.top.fill.style.width = `${Math.round(s.progress.ratio * 100)}%`;
+    els.top.fill.style.width = `${Math.round(progressFraction(s) * 100)}%`;
     return;
   }
 

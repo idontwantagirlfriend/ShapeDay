@@ -37,6 +37,7 @@ async function run({ app, getMainWin, state, windows }) {
     autoAdvance: true,
     estimatorMode: 'smart',
     summaryMode: 'template',
+    overlayStyle: 'top', // persisted settings survive runs; pin the shape this flow expects
     llm: { baseUrl: '', apiKey: '', model: '' },
   });
   check('windows created (main+bar+toast+tint)', windows.ALL.length >= 4, `${windows.ALL.length}`);
@@ -105,6 +106,18 @@ async function run({ app, getMainWin, state, windows }) {
   check('left click finishes in one gesture',
     click1.event === 'finished' && snap.day.tasks[0].status === 'green' && snap.day.tasks[0].finishedAt > 0);
   check('next task auto-flagged after finish', snap.day.tasks[1].status === 'yellow');
+
+  // overlay progress is the CURRENT task's pace (worked ÷ its estimate), not
+  // the day's workload: the day reads high here, the fresh current task ~0%
+  await call('settings:set', { overlayStyle: 'top' });
+  await sleep(1500);
+  const barWinNow = windows.ALL.find((w) => w.webContents.getURL().includes('bar.html'));
+  const stripPct = await barWinNow.webContents.executeJavaScript(
+    `parseInt(document.getElementById('strip-fill').style.width, 10)`
+  );
+  const dayPct = Math.round(snap.progress.ratio * 100);
+  check('overlay progress tracks the current task, not the day',
+    stripPct <= 5 && dayPct > 20, `strip=${stripPct}% day=${dayPct}%`);
   await sleep(1200);
   let ev = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "break-propose")');
   check('break proposal fired', ev.length === 1);
