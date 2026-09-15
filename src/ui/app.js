@@ -510,7 +510,14 @@ function keyOf(d) {
 }
 
 // ---------- summarize ----------
-$$('.sum-scopes button').forEach((b) =>
+$('#btn-resummarize').addEventListener('click', async () => {
+  const st = $('#btn-resummarize');
+  st.disabled = true;
+  await shapeday.call('report:regen', { scope: sumScope });
+  st.disabled = false;
+  loadReport();
+});
+$$('.sum-scopes button[data-scope]').forEach((b) =>
   b.addEventListener('click', () => {
     sumScope = b.dataset.scope;
     $$('.sum-scopes button').forEach((x) => x.classList.toggle('active', x === b));

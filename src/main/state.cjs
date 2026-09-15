@@ -614,6 +614,18 @@ function createState(store, hooks = {}) {
       return { settings: store.settings };
     },
 
+    /** Manual re-summarize: flush the cached AI summary, regenerate now. */
+    'report:regen': ({ scope }) => {
+      if (store.settings.summaryMode !== 'ai' || !llmCfg()) {
+        return { ok: false, reason: 'summarize is not in AI mode' };
+      }
+      const key = ['day', 'week', 'month', 'year'].includes(scope) ? scope : 'day';
+      delete llmReport.cache[key];
+      llmReport.cacheMut = -1; // every cache is now stale by construction
+      fireSummary(key, daysForScope(key, TimeUtil.todayKey()));
+      return { ok: true };
+    },
+
     'report:get': ({ scope }) => {
       const s = store.settings;
       const key = TimeUtil.todayKey();

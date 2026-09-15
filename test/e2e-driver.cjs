@@ -123,6 +123,18 @@ async function run({ app, getMainWin, state, windows }) {
   check('paused task resumes after break',
     snap.day.tasks[1].status === 'yellow' && !!snap.active && snap.active.id === snap.day.tasks[1].id);
   check('toast hidden after break ends', toast() && !toast().isVisible());
+  // regression: the toast never scrolls — window height >= content height
+  const toastW = toast();
+  const fits = { ok: false };
+  if (toastW) {
+    const shown = await win.webContents.executeJavaScript('window.__events.some(e => e.type === "break-propose")');
+    if (shown) {
+      const contentH = await toastW.webContents.executeJavaScript('document.querySelector(".toast").scrollHeight');
+      const [, winH] = toastW.getContentSize();
+      fits.ok = winH >= contentH;
+    }
+  }
+  check('break toast fits its content without scrolling', fits.ok);
 
   // 5. finish the second → 100% → 50% self-eval prompt
   await call('task:click', { id: snap.day.tasks[1].id });
@@ -403,6 +415,17 @@ async function run({ app, getMainWin, state, windows }) {
   check('{history_reports} interpolated, not left literal', merged && !mockSys.includes('{history_reports}'));
   const evRep = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:report")');
   check('llm:report event fired', evRep.length >= 1);
+
+  // manual re-summarize: a second llm:report arrives for the same scope
+  const beforeRep = evRep.length;
+  await call('report:regen', { scope: 'day' });
+  for (let i = 0; i < 10; i++) {
+    await sleep(500);
+    const n = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:report").length');
+    if (n > beforeRep) break;
+  }
+  const repEvents = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "llm:report").length');
+  check('re-summarize regenerates the AI summary', repEvents > beforeRep);
   const dbg = await win.webContents.executeJavaScript('window.__events.map(e => e.type + (e.data && e.data.error ? ":" + e.data.error : ""))');
   console.log('EVENTS:', JSON.stringify(dbg));
   srv.close();

@@ -201,6 +201,16 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
     }
     return { ok: true };
   }
+  if (kind === 'overlay:toastHeight') {
+    // the toast sizes to its content; the bottom edge stays pinned
+    if (toastWin && !toastWin.isDestroyed() && _e.sender === toastWin.webContents) {
+      const h = Math.max(120, Math.min(400, Math.round(Number(payload?.h) || 170)));
+      const [x, y] = toastWin.getPosition();
+      const [, oldH] = toastWin.getSize();
+      if (h !== oldH) toastWin.setBounds({ x, y: y + (oldH - h), width: 380, height: h });
+    }
+    return { ok: true };
+  }
   if (kind === 'overlay:drag') {
     const senderId = _e.sender.id;
     if (payload?.end) {

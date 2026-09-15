@@ -21,6 +21,16 @@ function show(mode_) {
     headline.textContent = 'On break';
     sub.textContent = 'Look away from the screen. Really.';
   }
+  fitWindow();
+}
+
+/** Tell the main process this window's true height; it never scrolls. */
+function fitWindow() {
+  const h = document.querySelector('.toast')?.scrollHeight ?? 170;
+  if (h !== fitWindow._last) {
+    fitWindow._last = h;
+    shapeday.call('overlay:toastHeight', { h: Math.ceil(h) + 2 });
+  }
 }
 
 document.getElementById('accept').addEventListener('click', () => {
@@ -56,8 +66,9 @@ shapeday.onEvent((ev) => {
     show('propose');
     headline.textContent = 'Task done.';
     sub.textContent = ev.data?.nextTitle
-      ? `Next up: “${ev.data.nextTitle}”. Ten minutes off makes it faster.`
+      ? `Next up: ${ev.data.nextTitle}. Ten minutes off makes it faster.`
       : 'Nothing queued. Ten minutes off anyway?';
+    fitWindow();
   }
   if (ev.type === 'break-started') show('counting');
   if (ev.type === 'break-over' || ev.type === 'break-skipped') mode = 'propose';

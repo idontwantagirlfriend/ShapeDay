@@ -661,8 +661,13 @@ html.overlay, html.overlay body { background: transparent; }
 .toast { cursor: grab; }
 .toast:active { cursor: grabbing; }
 .toast button { cursor: pointer; }
+.toast { overflow: hidden; }
 .toast h4 { margin: 0; font-size: 1rem; }
-.toast .sub { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
+.toast .sub {
+  color: var(--text-dim); font-size: 0.85rem; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .toast .row { display: flex; gap: 8px; margin-top: auto; }
 .toast .countdown { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
 .toast .countdown.late { color: var(--ow-2); }
