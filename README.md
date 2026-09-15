@@ -55,8 +55,4 @@ Windows targets cross-build from Linux (NSIS step needs wine); Linux builds skip
 
 ## Signing
 
-The "Unknown Publisher" / SmartScreen warning appears because the exes are unsigned. Removing it requires a code signing certificate; no configuration can fake it.
-
-- Set the repo secrets `CSC_LINK` (path or base64 of a .pfx/.p12) and `CSC_KEY_PASSWORD`. Push a `v*` tag: the `release` workflow builds on a real Windows runner, signs (signtool + timestamp), and attaches the artifacts to the release.
-- Locally on Windows, the same secrets in the environment sign `npm run dist:win` automatically.
-- Certificate options: an OV cert shows your name after reputation builds; an EV cert (hardware token or cloud HSM) clears SmartScreen immediately; Azure Trusted Signing is the cheapest managed option. Open-source developers qualify for discounted tiers (e.g. Certum's open-source cert).
+The "Unknown Publisher" / SmartScreen warning appears because the exes are unsigned. Getting a signature costs quite a bit. I give up.
