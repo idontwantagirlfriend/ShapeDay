@@ -611,13 +611,17 @@ async function run({ app, getMainWin, state, windows }) {
     document.querySelector('[data-viz=week]').click();
     await new Promise((r) => setTimeout(r, 700));
     const all = (canvas._hits || []).filter((h) => h.kind === 'task');
-    const wh = all.find((h) => h.overflow);
+    const wh = all[0];
     if (wh) {
       const r = canvas.getBoundingClientRect();
       const cx = r.left + wh.x + wh.w / 2, cy = r.top + wh.y + Math.min(wh.h / 2, 8);
       canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
       await new Promise((r2) => setTimeout(r2, 120));
       out.week = !bubble.hidden && bubble.textContent.length > 0;
+      // nudge within the same block: the bubble must persist, not flicker away
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 6, clientY: cy + 3 }));
+      await new Promise((r2) => setTimeout(r2, 120));
+      out.persist = !bubble.hidden && bubble.textContent.length > 0;
     } else out.week = 'no-task-hit';
     // month: center of a day cell with tasks
     document.querySelector('[data-viz=month]').click();
@@ -633,9 +637,8 @@ async function run({ app, getMainWin, state, windows }) {
     } else out.month = 'no-day-hit';
     return out;
   })()`);
-  check('week hover opens the detail bubble',
-    hoverProbe.week === true || (typeof hoverProbe.week === 'string' && hoverProbe.week.includes('no-task')),
-    JSON.stringify(hoverProbe.week));
+  check('week hover previews without clicking, surviving cursor nudges',
+    hoverProbe.week === true && hoverProbe.persist === true, JSON.stringify(hoverProbe));
   check('month hover opens the task list with cascaded detail',
     hoverProbe.month === true && hoverProbe.cascaded === true, JSON.stringify(hoverProbe));
   const repMonth = await call('report:get', { scope: 'month' });

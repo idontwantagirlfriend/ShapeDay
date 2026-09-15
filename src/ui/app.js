@@ -402,8 +402,9 @@ $('#timeline').addEventListener('mousemove', (e) => {
       hideVizBubble();
     }
   } else if (vizScope === 'week') {
+    // hover-to-preview on any task block; no click needed
     const hit = Timeline.hitTest(canvas, e.clientX, e.clientY);
-    if (hit?.kind === 'task' && hit.overflow) {
+    if (hit?.kind === 'task') {
       showWeekPreview(hit, e);
     } else {
       hideVizBubble();
