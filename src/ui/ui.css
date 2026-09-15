@@ -185,6 +185,26 @@ li.task .dot {
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04);
 }
 li.task .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* editable fields wear a faint rounded outline — no captions needed */
+.title-editable {
+  border: 1px solid rgba(232, 230, 227, 0.09);
+  border-radius: 8px;
+  padding: 3px 9px;
+  cursor: text;
+}
+li.task:hover .title-editable { border-color: rgba(232, 230, 227, 0.18); }
+.title-edit {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 2px 8px;
+  outline: none;
+  resize: none;
+  white-space: pre-wrap;
+}
 li.task.paused .title { color: var(--text-dim); }
 li.task .stamp { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 li.task .chip {
@@ -202,9 +222,21 @@ li.task .chip {
 }
 li.task .chip button { padding: 0 6px; border: none; background: none; color: var(--text-dim); font-size: 0.95rem; }
 li.task .chip button:hover { color: var(--text); }
+li.task .chip .mins { cursor: text; }
+li.task .chip .mins-edit {
+  width: 5ch; font: inherit; font-size: 0.82rem;
+  padding: 0 4px; border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--bg); color: var(--text); outline: none;
+}
 
 .toast .row button { white-space: nowrap; }
 li.task .chip button:hover { color: var(--text); }
+li.task .chip .mins { cursor: text; }
+li.task .chip .mins-edit {
+  width: 5ch; font: inherit; font-size: 0.82rem;
+  padding: 0 4px; border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--bg); color: var(--text); outline: none;
+}
 
 li.task .hint { font-size: 0.75rem; color: var(--text-dim); text-align: right; min-width: 86px; }
 

@@ -54,6 +54,28 @@ async function run({ app, getMainWin, state, windows }) {
   check('drag grip present and visible on rows', grip !== 'MISSING' && !grip.startsWith('0)'), grip);
   check('estimator buckets applied', add2.task.estimateMin >= 45, `build est ${add2.task.estimateMin}m`);
 
+  // 1a. write-in editors: type an ETA and rename a headline
+  const writeIn = await win.webContents.executeJavaScript(`(async () => {
+    const call = (k, p) => shapeday.call(k, p);
+    const row0 = document.querySelectorAll('li.task')[0];
+    row0.querySelector('.mins').click();
+    const minsInput = row0.querySelector('.mins-edit');
+    minsInput.value = '45';
+    minsInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 500));
+    const est = (await call('day:get')).day.tasks[0].estimateMin;
+    const row1 = document.querySelectorAll('li.task')[1];
+    row1.querySelector('.title').click();
+    const titleBox = row1.querySelector('.title-edit');
+    titleBox.value = 'Ship the timeline';
+    titleBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 500));
+    const title = (await call('day:get')).day.tasks[1].title;
+    return { est, title };
+  })()`);
+  check('ETA write-in commits a typed value', writeIn.est === 45, String(writeIn.est));
+  check('headline write-in renames the task', writeIn.title === 'Ship the timeline', writeIn.title);
+
   // 1b. click a NON-current task → it becomes current, old goes on break
   await call('task:add', { title: 'Read spec draft' });
   snap = await call('day:get');

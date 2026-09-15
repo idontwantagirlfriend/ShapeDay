@@ -491,6 +491,13 @@ function createState(store, hooks = {}) {
       return { event: r.event };
     },
 
+    'task:rename': ({ id, title }) => {
+      const t = Model.findTask(today(), id);
+      const clean = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (t && clean) t.title = clean;
+      return { ok: !!(t && clean) };
+    },
+
     'task:setEstimate': ({ id, minutes }) => {
       const t = Model.findTask(today(), id);
       if (t) {

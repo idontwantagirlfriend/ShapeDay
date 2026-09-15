@@ -74,9 +74,80 @@ const HINT_MANUAL = {
 };
 
 // Rebuild the list only when it actually changed — a 1 Hz DOM rebuild would
-// cancel in-flight drag-and-drops and steal focus from the steppers.
+// cancel in-flight drag-and-drops and an open estimate editor mid-typing.
 let lastPlanSig = null;
 let dragId = null;
+let editingEstimate = false;
+let editingTitle = false;
+
+/** Inline write-in for the headline: a textarea in place of the title. */
+function openTitleEditor(task, span) {
+  if (editingTitle) return;
+  editingTitle = true;
+  const box = document.createElement('textarea');
+  box.className = 'title-edit';
+  box.rows = 1;
+  box.value = task.title;
+  const fit = () => {
+    box.style.height = 'auto';
+    box.style.height = `${Math.min(120, box.scrollHeight)}px`;
+  };
+  const close = (commit) => {
+    editingTitle = false;
+    const v = box.value.replace(/\s+/g, ' ').trim();
+    if (commit && v && v !== task.title) {
+      shapeday.call('task:rename', { id: task.id, title: v });
+      span.textContent = v;
+      return; // the tick re-renders with the persisted title
+    }
+    span.textContent = task.title;
+  };
+  box.addEventListener('input', fit);
+  box.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.shiftKey) close(true);
+    if (e.key === 'Escape') close(false);
+  });
+  box.addEventListener('blur', () => close(true));
+  box.addEventListener('click', (e) => e.stopPropagation());
+  span.textContent = '';
+  span.appendChild(box);
+  box.focus();
+  box.select();
+  fit();
+}
+
+/** Inline write-in for an ETA: replaces the minutes label with an input. */
+function openEstimateEditor(task, span) {
+  if (editingEstimate) return;
+  editingEstimate = true;
+  const input = document.createElement('input');
+  input.className = 'mins-edit';
+  input.type = 'text';
+  input.value = String(task.estimateMin);
+  input.pattern = '\\d+';
+  const close = (commit) => {
+    editingEstimate = false;
+    const v = parseInt(input.value, 10);
+    if (commit && Number.isFinite(v) && v > 0) {
+      shapeday.call('task:setEstimate', { id: task.id, minutes: v });
+      span.textContent = `~${fmtMin(v)}`; // optimistic; the tick confirms
+      return; // input is replaced by the re-render
+    }
+    span.textContent = `~${fmtMin(task.estimateMin)}`;
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') close(true);
+    if (e.key === 'Escape') close(false);
+  });
+  input.addEventListener('blur', () => close(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+  span.textContent = '';
+  span.appendChild(input);
+  input.focus();
+  input.select();
+}
 
 function planSignature(day) {
   return JSON.stringify([
@@ -100,7 +171,7 @@ function clearDropMarkers() {
 function renderPlan() {
   const day = snap.day;
   const sig = planSignature(day);
-  if (sig === lastPlanSig && !dragId) return;
+  if ((sig === lastPlanSig && !dragId) || editingEstimate || editingTitle) return;
   lastPlanSig = sig;
 
   const list = $('#task-list');
@@ -160,8 +231,12 @@ function renderPlan() {
     dot.className = `dot s-${t.status}`;
 
     const title = document.createElement('span');
-    title.className = 'title';
+    title.className = 'title title-editable';
     title.textContent = t.title;
+    title.onclick = (e) => {
+      e.stopPropagation();
+      openTitleEditor(t, title);
+    };
 
     const stamp = document.createElement('span');
     stamp.className = 'stamp';
@@ -185,7 +260,15 @@ function renderPlan() {
       const plus = document.createElement('button');
       plus.textContent = '+';
       plus.onclick = (e) => { e.stopPropagation(); shapeday.call('task:setEstimate', { id: t.id, minutes: t.estimateMin + 5 }); };
-      chip.append(minus, document.createTextNode(`~${fmtMin(t.estimateMin)}`), plus);
+      // write-in: click the minutes and type a value
+      const mins = document.createElement('span');
+      mins.className = 'mins';
+      mins.textContent = `~${fmtMin(t.estimateMin)}`;
+      mins.onclick = (e) => {
+        e.stopPropagation();
+        openEstimateEditor(t, mins);
+      };
+      chip.append(minus, mins, plus);
     }
 
     const hint = document.createElement('span');
