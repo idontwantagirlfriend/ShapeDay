@@ -14,10 +14,9 @@ win:
   target:
     - nsis
     - portable
-  # Allows building Windows targets on Linux (no wine): the exe keeps
-  # Electron's default icon resource; the NSIS installer + shortcuts still
-  # use assets/icon.ico. Build on Windows for a fully branded exe.
-  signAndEditExecutable: false
+  # Signing activates automatically when CSC_LINK + CSC_KEY_PASSWORD are set
+  # (see README: Signing). Linux builds must pass
+  # --config.win.signAndEditExecutable=false since they have no signtool.
 nsis:
   oneClick: false                     # assisted wizard → directory is selectable
   allowToChangeInstallationDirectory: true
