@@ -350,6 +350,42 @@ async function run({ app, getMainWin, state, windows }) {
   const topMoved = barWin.getPosition();
   check('strip still drags from the grip',
     topMoved[0] === topPos[0] + 40 && topMoved[1] === topPos[1] + 20, `${topPos} → ${topMoved}`); // press-anchored
+  // capture-layer drag lifecycle: begin from the origin, moves arrive via
+  // the shield path (fast drags can outrun the window — this must not stall)
+  const shieldBefore = windows.ALL.filter((w) => w.webContents.getURL().includes('dragshield')).map((w) => w.isVisible());
+  const capPos = barWin.getPosition();
+  await barWin.webContents.executeJavaScript(`(() => {
+    const g = document.getElementById('strip-grip');
+    g.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 500, screenY: 400 }));
+    return true;
+  })()`);
+  await sleep(300); // shield raises on begin
+  const shieldMid = windows.ALL.find((w) => w.webContents.getURL().includes('dragshield'));
+  const shieldVisibleDuringDrag = shieldMid && shieldMid.isVisible();
+  await win.webContents.executeJavaScript(`(async () => {
+    // a far, fast drag entirely outside the strip window, via the capture path
+    await shapeday.call('overlay:dragMove', { sx: 900, sy: 500 });
+    await shapeday.call('overlay:dragMove', { sx: 1300, sy: 600 });
+    return true;
+  })()`);
+  await sleep(300);
+  const capMoved = barWin.getPosition();
+  await win.webContents.executeJavaScript(`shapeday.call('overlay:dragEnd', {}), true`);
+  await sleep(300);
+  const shieldGoneAfterEnd = shieldMid && !shieldMid.isVisible();
+  check('capture layer rides the drag and hides after release',
+    shieldVisibleDuringDrag && shieldGoneAfterEnd &&
+      capMoved[0] === capPos[0] + 800 && capMoved[1] === capPos[1] + 200,
+    `shield=${shieldVisibleDuringDrag}/${shieldGoneAfterEnd} ${capPos} → ${capMoved}`);
+  await call('settings:set', { overlayStyle: 'floater' });
+  await sleep(400);
+  await barWin.webContents.executeJavaScript(`(() => {
+    document.getElementById('floater').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 640, sy: 300 }));
+    return true;
+  })()`);
+  await win.webContents.executeJavaScript(`shapeday.call('overlay:dragEnd', {}), true`);
+  await sleep(200);
+
   const bgPos = barWin.getPosition();
   await barWin.webContents.executeJavaScript(`(() => {
     document.getElementById('top-headline').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 300, screenY: 10 }));

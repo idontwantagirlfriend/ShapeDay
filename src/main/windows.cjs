@@ -153,4 +153,40 @@ function createTint() {
   return win;
 }
 
-module.exports = { createMainWindow, createBar, createToast, createTint, sendToAll, applyBarStyle, ALL };
+/** Fullscreen pointer-capture layer, shown only while a drag is in flight.
+ *  Spans every display so the cursor can never escape it. */
+function createDragShield() {
+  const union = screen
+    .getAllDisplays()
+    .map((d) => d.bounds)
+    .reduce((u, b) => ({
+      x: Math.min(u.x, b.x),
+      y: Math.min(u.y, b.y),
+      width: Math.max(u.x + u.width, b.x + b.width) - Math.min(u.x, b.x),
+      height: Math.max(u.y + b.height, b.y + b.height) - Math.min(u.y, b.y),
+    }));
+  const win = track(
+    new BrowserWindow({
+      ...union,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      focusable: false,
+      hasShadow: false,
+      show: false,
+      webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
+    })
+  );
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.loadFile(UI('dragshield.html'));
+  return win;
+}
+
+module.exports = {
+  createMainWindow, createBar, createToast, createTint, createDragShield,
+  sendToAll, applyBarStyle, ALL,
+};

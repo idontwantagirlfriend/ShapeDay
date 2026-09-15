@@ -86,8 +86,27 @@ let mainWin = null;
 let barWin = null;
 let toastWin = null;
 let tintWin = null;
+let dragShieldWin = null;
 let tray = null;
 let isQuitting = false;
+
+/** Raise the fullscreen capture layer while any drag is in flight; the
+ *  cursor can never leave it, so fast drags don't stutter and the mouseup
+ *  is always delivered wherever the pointer ends up. */
+function raiseDragShield() {
+  if (!dragShieldWin || dragShieldWin.isDestroyed()) return;
+  if (!dragShieldWin.isVisible()) {
+    dragShieldWin.showInactive();
+    dragShieldWin.moveTop();
+  }
+}
+function lowerDragShield() {
+  if (dragShieldWin && !dragShieldWin.isDestroyed() && dragShieldWin.isVisible()) dragShieldWin.hide();
+}
+function anyDragActive() {
+  for (const d of overlayDrags.values()) if (d.active) return true;
+  return false;
+}
 
 /** Show the main window, recreating it if it was destroyed (e.g. by a
  *  close that slipped past the hide-to-tray interception). */
@@ -184,6 +203,7 @@ function handleOverlayDrag(senderId, target, p) {
     const [w, h] = target.getSize();
     drag = { active: true, x, y, w, h, mx: p.sx, my: p.sy };
     overlayDrags.set(senderId, drag);
+    raiseDragShield();
   }
   // setBounds (not setPosition): re-asserts the anchored size on every move,
   // so no external resize creep (OS DPI snapping, snap layouts, anything)
@@ -227,11 +247,31 @@ ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
     }
     return { ok: true };
   }
+  if (kind === 'overlay:dragMove') {
+    // moves arriving via the capture layer: steer every active drag
+    for (const [senderId, drag] of overlayDrags) {
+      if (!drag.active) continue;
+      const target =
+        barWin && !barWin.isDestroyed() && senderId === barWin.webContents.id
+          ? barWin
+          : toastWin && !toastWin.isDestroyed() && senderId === toastWin.webContents.id
+            ? toastWin
+            : null;
+      if (target) handleOverlayDrag(senderId, target, { ...payload, begin: false });
+    }
+    return { ok: true };
+  }
+  if (kind === 'overlay:dragEnd') {
+    for (const drag of overlayDrags.values()) drag.active = false;
+    lowerDragShield();
+    return { ok: true };
+  }
   if (kind === 'overlay:drag') {
     const senderId = _e.sender.id;
     if (payload?.end) {
       const drag = overlayDrags.get(senderId);
       if (drag) drag.active = false;
+      if (!anyDragActive()) lowerDragShield();
       return { ok: true };
     }
     const target =
@@ -282,6 +322,7 @@ if (!gotLock) {
       }
     });
     tintWin = windows.createTint(); // tint first → bar/toast stay above it
+    dragShieldWin = windows.createDragShield();
     barWin = windows.createBar();
     toastWin = windows.createToast();
 

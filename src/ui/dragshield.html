@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en" class="overlay">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>drag</title>
+  <link rel="stylesheet" href="ui.css" />
+</head>
+<!-- Fullscreen capture layer shown only while an overlay drag is in flight.
+     The cursor can never leave it, so fast drags never stutter and the
+     mouseup is always delivered — wherever the pointer ends up. -->
+<body class="drag-shield">
+  <script src="dragshield.js"></script>
+</body>
+</html>

@@ -561,6 +561,7 @@ details.settings[open] summary { color: var(--accent); border-color: var(--accen
 
 /* ---------- overlay windows (bar / toast / tint) ---------- */
 html.overlay, html.overlay body { background: transparent; }
+.drag-shield, .drag-shield body { cursor: grabbing !important; background: transparent; }
 /* the strip: click-through except the center grip; the whole background
    doubles as the day-progress bar */
 .topbar {
