@@ -475,6 +475,9 @@
         ctx.fillRect(x + 3, yOf(endMin), colW - 6, d.overworkMin * scale);
       }
 
+      // column-level hit (behind the tasks): clicking the column selects the day
+      hits.push({ kind: 'day', x: x + 3, y: padT, w: colW - 6, h: plotH, date, tasks: [], summary: d?.summary || '' });
+
       // task blocks stacked from work start, height = planned minutes
       let cursor = startMin;
       for (const t of d.tasks) {
@@ -612,10 +615,13 @@
         kind: 'day',
         x, y, w: cellW, h: cellH,
         date,
+        workStart: d?.workStart ?? null,
+        workEnd: d?.workEnd ?? null,
         tasks: (d?.tasks || []).map((t) => ({
           title: t.title, status: t.status,
           startedAt: t.startedAt, finishedAt: t.finishedAt,
           estimateMin: t.estimateMin, elapsedMin: t.elapsedMin,
+          worked: t.worked || [],
         })),
         summary: d?.summary || '',
         overworkMin: d?.overworkMin ?? 0,

@@ -643,6 +643,45 @@ async function run({ app, getMainWin, state, windows }) {
     hoverProbe.month === true && hoverProbe.cascaded === true, JSON.stringify(hoverProbe));
   const repMonth = await call('report:get', { scope: 'month' });
   const repYear = await call('report:get', { scope: 'year' });
+  // day selection: click a month cell → Day chart of that date, chip to return
+  const dayPick = await win.webContents.executeJavaScript(`(async () => {
+    const canvas = document.getElementById('timeline');
+    document.querySelector('[data-viz=month]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const today = (await shapeday.call('day:get')).date;
+    const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.date && h.date !== today);
+    if (!dh) return { ok: false, why: 'no non-today day hit' };
+    const r = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
+    await new Promise((r2) => setTimeout(r2, 900));
+    const chip = document.getElementById('day-pick');
+    const chipShown = chip && !chip.hidden && chip.textContent.trim().length > 3;
+    const dbg = { chipShown, txt: chip ? chip.textContent : 'gone', hid: chip ? chip.hidden : 'gone' };
+    chip.click(); // back to today
+    await new Promise((r2) => setTimeout(r2, 600));
+    return { ok: chipShown && chip.hidden, why: JSON.stringify(dbg) };
+  })()`);
+  check('clicking a month day opens its workload chart', dayPick.ok === true, JSON.stringify(dayPick));
+
+  // summary cells preview through the shared bubble, extending upward
+  const cellPrev = await win.webContents.executeJavaScript(`(async () => {
+    document.querySelector('[data-viz=week]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const cell = document.querySelector('#week-summaries .cell:not(.empty)');
+    if (!cell) return { ok: false, why: 'no filled cell' };
+    cell.dispatchEvent(new MouseEvent('mouseenter'));
+    await new Promise((r) => setTimeout(r, 150));
+    const bubble = document.getElementById('viz-bubble');
+    const shown = !bubble.hidden && bubble.textContent.length > 0;
+    const cellR = cell.getBoundingClientRect();
+    const bR = bubble.getBoundingClientRect();
+    const upward = bR.bottom <= cellR.top + 4; // preview sits above the cell
+    cell.dispatchEvent(new MouseEvent('mouseleave'));
+    await new Promise((r) => setTimeout(r, 120));
+    return { ok: shown && upward && bubble.hidden, why: 'shown=' + shown + ' up=' + upward };
+  })()`);
+  check('summary cells preview upward via the shared bubble', cellPrev.ok === true, JSON.stringify(cellPrev));
+
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');
 

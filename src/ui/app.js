@@ -344,16 +344,38 @@ $('#plan-auto').addEventListener('change', (e) => {
 
 // ---------- visualize ----------
 let vizScope = 'day';
+let vizDate = null; // selected day for the Day chart; null = today
 let vizData = null; // last fetched {scope, days, ...} for week/month
 let vizFetchedAt = 0;
 const VIZ_TTL = 15000; // refetch week/month data at most every 15s
+
+/** Switch the Day chart to an arbitrary date (from a week/month cell). */
+async function selectDay(date) {
+  vizDate = date && date !== snap.date ? date : null;
+  hideVizBubble();
+  vizScope = 'day';
+  $$('.viz-scopes button').forEach((x) => x.classList.toggle('active', x.dataset.viz === 'day'));
+  await renderViz(true);
+}
 
 async function renderViz(force) {
   if (!snap) return;
   const canvas = $('#timeline');
   const dayOnly = document.querySelectorAll('.viz-stats, .legend');
   if (vizScope === 'day') {
+    if (vizDate) {
+      // another day's workload: fetch it; the header stats stay today's, so hide them
+      dayOnly.forEach((el) => (el.style.display = 'none'));
+      const sel = await shapeday.call('viz:day', { date: vizDate });
+      if (sel && !sel.error) {
+        Timeline.render(canvas, sel.day, sel.bounds, snap.now);
+        updateDayPick();
+        return;
+      }
+      vizDate = null; // bad date: fall through to today
+    }
     dayOnly.forEach((el) => (el.style.display = ''));
+    updateDayPick();
     Timeline.render(canvas, snap.day, snap.bounds, snap.now);
     const done = snap.day.tasks.filter((t) => t.status === 'green').length;
     $('#st-done').textContent = `${done}/${snap.day.tasks.length}`;
@@ -379,6 +401,21 @@ async function renderViz(force) {
     renderWeekSummaries(null);
   }
 }
+
+/** The "showing Sep 14 · ✕" chip when the Day chart is on another date. */
+function updateDayPick() {
+  const chip = $('#day-pick');
+  if (!chip) return;
+  if (vizScope === 'day' && vizDate) {
+    const [, m, d] = vizDate.split('-');
+    chip.textContent = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m - 1]} ${+d} ✕`;
+    chip.hidden = false;
+  } else {
+    chip.hidden = true;
+  }
+}
+
+$('#day-pick').addEventListener('click', () => selectDay(null));
 
 $$('.viz-scopes button').forEach((b) =>
   b.addEventListener('click', () => {
@@ -416,11 +453,13 @@ $('#timeline').addEventListener('mouseleave', () => {
   if (vizScope !== 'day') hideVizBubble();
 });
 
-// week: click a task block for its description and times
+// week: click a task block for its details; click a column to open that day
+// month: click a day cell to open that day
 $('#timeline').addEventListener('click', (e) => {
-  if (vizScope !== 'week') return;
+  if (vizScope !== 'week' && vizScope !== 'month') return;
   const hit = Timeline.hitTest($('#timeline'), e.clientX, e.clientY);
   if (hit?.kind === 'task') showWeekTaskBubble(hit, e);
+  else if (hit?.kind === 'day' && hit.date) selectDay(hit.date);
   else hideVizBubble();
 });
 document.addEventListener('keydown', (e) => {
@@ -477,6 +516,57 @@ function showWeekTaskBubble(hit, e) {
   placeBubble(bubble, e);
 }
 
+/** Tiny burn-up of the hovered day: same reading as the Day chart. */
+function miniDayCanvas(hit) {
+  const tasks = (hit.tasks || [])
+    .filter((t) => (t.worked || []).length)
+    .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+  if (!tasks.length) return null;
+  const cv = document.createElement('canvas');
+  cv.className = 'mini-day';
+  cv.width = 560; cv.height = 110; // 2x for crispness, styled down via CSS
+  const ctx = cv.getContext('2d');
+  const ws = hit.workStart ?? tasks[0].worked[0].start;
+  const we = hit.workEnd ?? ws + 8 * 3600000;
+  let lastEnd = we;
+  for (const t of tasks) for (const seg of t.worked) lastEnd = Math.max(lastEnd, seg.end ?? seg.start);
+  const total = tasks.reduce((acc, t) => acc + t.estimateMin, 0) || 30;
+  const X = (t) => 6 + ((t - ws) / Math.max(1, lastEnd - ws)) * (cv.width - 12);
+  const Y = (v) => cv.height - 8 - (v / (total * 1.1)) * (cv.height - 16);
+  // overwork region
+  if (lastEnd > we) {
+    ctx.fillStyle = 'rgba(128, 61, 58, 0.4)';
+    ctx.fillRect(X(we), 6, X(lastEnd) - X(we), cv.height - 12);
+  }
+  ctx.strokeStyle = 'rgba(224, 101, 90, 0.6)';
+  ctx.beginPath(); ctx.moveTo(X(we), 6); ctx.lineTo(X(we), cv.height - 6); ctx.stroke();
+  // the earned line
+  ctx.beginPath();
+  ctx.moveTo(X(ws), Y(0));
+  let y = 0;
+  for (const t of tasks) {
+    const tw = t.worked.reduce((acc, x) => acc + (x.end - x.start), 0) / 60000;
+    if (tw <= 0) continue;
+    const rise = t.status === 'green' ? t.estimateMin : Math.min(tw, t.estimateMin);
+    for (const seg of t.worked) {
+      const share = ((seg.end - seg.start) / 60000 / tw) * rise;
+      ctx.lineTo(X(seg.start), Y(y));
+      ctx.lineTo(X(seg.end), Y(y + share));
+      y += share;
+    }
+  }
+  ctx.strokeStyle = '#aed8fc';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineTo(X(lastEnd), Y(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(174, 216, 252, 0.12)';
+  ctx.fill();
+  return cv;
+}
+
 function showMonthBubble(hit, e) {
   const bubble = $('#viz-bubble');
   const rows = hit.tasks
@@ -485,6 +575,12 @@ function showMonthBubble(hit, e) {
   const sum = hit.summary ? `<div class="sumline">${escapeHtml(hit.summary)}</div>` : '';
   bubble.innerHTML =
     `<h5>${Number(hit.date.slice(8))} · ${hit.tasks.length} task(s)</h5>` + rows + sum;
+  if (!sum) bubble.querySelector('.sumline')?.remove();
+  const mini = miniDayCanvas(hit);
+  if (mini) {
+    const anchor = bubble.querySelector('.sumline') || bubble;
+    anchor.parentNode.insertBefore(mini, anchor);
+  }
   bubble.hidden = false;
   placeBubble(bubble, e);
 }
@@ -511,17 +607,53 @@ function renderWeekSummaries(data) {
     cells.push(
       `<div class="cell ${text ? '' : 'empty'}">` +
         `<div class="day-label">${DOW[idx]} ${date.slice(8)}</div>` +
-        (text ? `${escapeHtml(text.slice(0, 120))}<div class="preview">${escapeHtml(text)}</div>` : 'no summary') +
+        (text ? escapeHtml(text.slice(0, 120)) : 'no summary') +
         `</div>`
     );
     cur.setDate(cur.getDate() + 1);
     idx++;
   }
   const week = data.periodSummary
-    ? `<b>Week summary</b><br>${escapeHtml(data.periodSummary)}<div class="preview">${escapeHtml(data.periodSummary)}</div>`
+    ? `<b>Week summary</b><br>${escapeHtml(data.periodSummary.slice(0, 160))}`
     : 'no weekly summary yet';
   box.innerHTML = `<div class="cells">${cells.join('')}</div><div class="week-cell ${data.periodSummary ? '' : 'empty'}">${week}</div>`;
   box.hidden = false;
+  bindCellPreviews(box, data);
+}
+
+/** Full-text previews for the summary cells via the shared bubble. The
+ *  bubble prefers to extend UPWARD so it never grows the page (a downward
+ *  popup pushes the scroll area, the cursor leaves the cell, and the popup
+ *  closes — the loop she reported). */
+function bindCellPreviews(box, data) {
+  const wrap = document.querySelector('.viz-wrap');
+  const bubble = $('#viz-bubble');
+  const show = (text, cell) => {
+    if (!text) return;
+    bubble.textContent = text;
+    bubble.hidden = false;
+    const wrapR = wrap.getBoundingClientRect();
+    const cellR = cell.getBoundingClientRect();
+    const bw = Math.min(320, wrapR.width - 16);
+    bubble.style.maxWidth = `${bw}px`;
+    const bh = bubble.offsetHeight;
+    let x = cellR.left - wrapR.left;
+    x = Math.max(8, Math.min(x, wrapR.width - bw - 8));
+    let y = cellR.top - wrapR.top - bh - 8; // extend upward first
+    if (y < 0) y = cellR.bottom - wrapR.top + 8; // no room above: below, still inside
+    bubble.style.left = `${x}px`;
+    bubble.style.top = `${y}px`;
+  };
+  const hide = () => hideVizBubble();
+  const cells = [...box.querySelectorAll('.cell, .week-cell')];
+  const texts = [
+    ...data.days.map((d) => d.summary || ''),
+    data.periodSummary || '',
+  ];
+  cells.forEach((cell, i) => {
+    cell.onmouseenter = () => show(texts[i], cell);
+    cell.onmouseleave = hide;
+  });
 }
 
 function keyOf(d) {

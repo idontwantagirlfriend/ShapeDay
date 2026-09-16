@@ -713,6 +713,15 @@ function createState(store, hooks = {}) {
      * current calendar week (Mon..Sun), month = the current calendar month;
      * future days simply have no entry and render grayed out.
      */
+    /** One day's raw data for the Day chart, for any date. */
+    'viz:day': ({ date }) => {
+      const s = store.settings;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return { error: 'bad date' };
+      const bounds = TimeUtil.workBounds(date, s.workStart, s.workEnd);
+      const day = store.day(date) || { date, tasks: [], breaks: [] };
+      return { date, day, bounds };
+    },
+
     'viz:days': ({ scope }) => {
       const s = store.settings;
       const key = TimeUtil.todayKey();
