@@ -20,7 +20,7 @@
       <details class="settings">
         <summary>⚙</summary>
         <div class="settings-pop">
-          <label><span data-i18n="Work start">Work start</span>
+          <label><span data-i18n="set.work_start">Work start</span>
             <span class="ctl">
               <button class="step" data-time="set-start" data-d="-15" title="−15 min">▾</button>
               <input type="text" id="set-start" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" />
@@ -28,7 +28,7 @@
               <span class="help" data-help="When your work hours begin — type HH:MM or use the stepper. The timeline and the overwork clock key off this.">i</span>
             </span>
           </label>
-          <label><span data-i18n="Work end">Work end</span>
+          <label><span data-i18n="set.work_end">Work end</span>
             <span class="ctl">
               <button class="step" data-time="set-end" data-d="-15" title="−15 min">▾</button>
               <input type="text" id="set-end" placeholder="HH:MM" pattern="[0-2]?\d:[0-5]\d" spellcheck="false" />
@@ -36,37 +36,37 @@
               <span class="help" data-help="When work hours end. Past this moment the screen begins tinting — blue, then red, then darkest red.">i</span>
             </span>
           </label>
-          <label><span data-i18n="Break length">Break length</span>
+          <label><span data-i18n="set.break_len">Break length</span>
             <span class="ctl"><input type="number" id="set-break" min="5" max="30" step="1" /><span class="help" data-help="Length of the break proposed after each finished task.">i</span></span>
           </label>
           <div class="toggle-row">
-            <label class="toggle"><span data-i18n="Auto-advance">Auto-advance</span> <input type="checkbox" id="set-auto" /></label>
-            <label class="toggle"><span data-i18n="Overlay">Overlay</span> <input type="checkbox" id="set-overlay" /></label>
+            <label class="toggle"><span data-i18n="set.auto">Auto-advance</span> <input type="checkbox" id="set-auto" /></label>
+            <label class="toggle"><span data-i18n="set.overlay">Overlay</span> <input type="checkbox" id="set-overlay" /></label>
           </div>
-          <label><span data-i18n="Overlay opacity">Overlay opacity</span>
+          <label><span data-i18n="set.opacity">Overlay opacity</span>
             <span class="ctl">
               <input type="range" id="set-ow-opacity" min="20" max="100" step="5" />
               <span class="range-val" id="ow-op-val"></span>
               <span class="help" data-help="How solid the always-on-top bar is. 100% is fully solid; low values let your desktop show through.">i</span>
             </span>
           </label>
-          <label><span data-i18n="Overlay style">Overlay style</span>
+          <label><span data-i18n="set.style">Overlay style</span>
             <span class="ctl">
               <select id="set-overlay-style">
-                <option value="top" data-i18n="Top bar">Top bar</option>
-                <option value="floater" data-i18n="Floater">Floater</option>
+                <option value="top" data-i18n="opt.top">Top bar</option>
+                <option value="floater" data-i18n="opt.floater">Floater</option>
               </select>
               <span class="help" data-help="Top bar: full-width strip, click-through everywhere except the center drag grip; its background is the day progress. Floater: the rounded capsule (headline + clock), draggable from its ⋯ grip.">i</span>
             </span>
           </label>
-          <label><span data-i18n="Tint strength">Tint strength</span>
+          <label><span data-i18n="set.tint">Tint strength</span>
             <span class="ctl">
               <input type="range" id="set-tint" min="0" max="200" step="10" />
               <span class="range-val" id="tint-val"></span>
               <span class="help" data-help="Strength of the overwork screen tint. 100 is the default curve; 0 disables the tint entirely; 200 doubles it.">i</span>
             </span>
           </label>
-          <label><span data-i18n="Background">Background</span>
+          <label><span data-i18n="set.background">Background</span>
             <span class="ctl">
               <button id="bg-choose" class="mini-btn">Choose…</button>
               <button id="bg-clear" class="mini-btn" title="Remove the background image">✕</button>
@@ -74,7 +74,7 @@
               <span class="help" data-help="Your image is drawn cover-fit: scaled and clipped to fill the window, aspect ratio kept, never stretched. A dark scrim keeps text readable.">i</span>
             </span>
           </label>
-          <label><span data-i18n="Language">Language</span>
+          <label><span data-i18n="set.language">Language</span>
             <select id="set-locale">
               <option value="auto">Auto</option>
               <option value="en-us">English</option>
@@ -83,15 +83,15 @@
             </select>
           </label>
           <div class="settings-sep"></div>
-          <label><span data-i18n="ETA estimation">ETA estimation</span>
+          <label><span data-i18n="set.eta_mode">ETA estimation</span>
             <span class="ctl"><select id="set-est-mode">
-              <option value="smart" data-i18n="Smart reading">Smart reading</option>
-              <option value="ai" data-i18n="AI estimation">AI estimation</option>
+              <option value="smart" data-i18n="opt.smart">Smart reading</option>
+              <option value="ai" data-i18n="opt.ai_est">AI estimation</option>
             </select><span class="help" data-help="Smart reading: keyword buckets × your personal bias factor, learned from your completed tasks. AI estimation: your configured endpoint re-estimates every unstarted task you haven't hand-edited.">i</span></span>
           </label>
-          <label><span data-i18n="Summarize">Summarize</span>
+          <label><span data-i18n="set.sum_mode">Summarize mode</span>
             <span class="ctl"><select id="set-sum-mode">
-              <option value="template" data-i18n="Templated text">Templated text</option>
+              <option value="template" data-i18n="opt.template">Templated text</option>
               <option value="ai">AI</option>
             </select><span class="help" data-help="Templated text: your mustache template over the report metrics, fully offline. AI: the model writes the headline and pinpoints the issues.">i</span></span>
           </label>
@@ -100,17 +100,17 @@
             <span class="help" data-help="Mustache variables: {{tasksDone}} {{tasksTotal}} {{tasksHung}} {{plannedMin}} {{actualMin}} {{estBias}} {{overworkDays}} {{overworkMin}} {{breaks}} {{breakMin}} {{longestNoBreakMin}} {{daysTracked}} {{scope}} — unknowns render empty.">i</span>
           </label>
           <div class="settings-sep"></div>
-          <label><span data-i18n="Base URL">Base URL</span>
+          <label><span data-i18n="set.base_url">Base URL</span>
             <span class="ctl"><input type="text" id="set-llm-url" placeholder="https://…/v1" spellcheck="false" /><span class="help" data-help="Any OpenAI-compatible endpoint — everything before /chat/completions. Keyless gateways work without a key.">i</span></span>
           </label>
-          <label><span data-i18n="API key">API key</span>
+          <label><span data-i18n="set.api_key">API key</span>
             <span class="ctl"><input type="password" id="set-llm-key" placeholder="sk-…" autocomplete="off" /><span class="help" data-help="Only if the provider requires one. Stored locally in shapeday.json — never committed anywhere.">i</span></span>
           </label>
-          <label><span data-i18n="Model">Model</span>
+          <label><span data-i18n="set.model">Model</span>
             <span class="ctl"><input type="text" id="set-llm-model" placeholder="model id" spellcheck="false" /><span class="help" data-help="The provider's model id — e.g. openrouter/free, gpt-4o-mini, gpt-oss:20b.">i</span></span>
           </label>
           <div class="llm-test-row">
-            <button id="llm-test"><span data-i18n="Test">Test</span></button>
+            <button id="llm-test"><span data-i18n="set.test">Test</span></button>
             <span class="llm-status" id="llm-status"></span>
           </div>
         </div>
@@ -118,28 +118,28 @@
     </header>
 
     <nav class="tabs">
-      <button data-view="plan" class="active" data-i18n="Plan">Plan</button>
-      <button data-view="viz" data-i18n="Visualize">Visualize</button>
-      <button data-view="sum" data-i18n="Summarize">Summarize</button>
+      <button data-view="plan" class="active" data-i18n="tabs.plan">Plan</button>
+      <button data-view="viz" data-i18n="tabs.viz">Visualize</button>
+      <button data-view="sum" data-i18n="tabs.sum">Summarize</button>
     </nav>
 
     <main>
       <!-- Phase One: Plan -->
       <section class="view active" id="view-plan">
         <div class="plan-add">
-          <input id="add-input" data-i18n-ph="What's due today?" placeholder="What's due today?" autocomplete="off" />
-          <button class="add-round" id="add-btn" data-i18n-title="List it" title="List it">＋</button>
+          <input id="add-input" data-i18n-ph="plan.input_ph" placeholder="What's due today?" autocomplete="off" />
+          <button class="add-round" id="add-btn" data-i18n-title="plan.add_title" title="List it">＋</button>
         </div>
         <div class="eta-banner" id="eta-banner" hidden>
           <b>Review ETAs.</b> <span id="eta-mode" class="mode-tag"></span>
-          <button id="eta-ai" hidden data-i18n-title="Ask the configured AI to re-estimate every unstarted task" title="Ask the configured AI to re-estimate every unstarted task" data-i18n="Refine with AI">Refine with AI</button>
+          <button id="eta-ai" hidden data-i18n-title="eta.refine" title="Ask the configured AI to re-estimate every unstarted task" data-i18n="eta.refine">Refine with AI</button>
           <span class="llm-status" id="eta-llm-status"></span>
-          <button id="eta-ok" data-i18n="Looks right">Looks right</button>
+          <button id="eta-ok" data-i18n="eta.ok">Looks right</button>
         </div>
         <ul class="tasks" id="task-list"></ul>
         <div class="plan-tools">
-          <button class="icon-btn" id="btn-reset" data-i18n-title="Reset statuses" title="Keep titles, everything back to red">↺</button>
-          <button class="icon-btn" id="btn-clear" data-i18n-title="Clear the day" title="Remove every task from today">🗑</button>
+          <button class="icon-btn" id="btn-reset" data-i18n-title="plan.reset" title="Keep titles, everything back to red">↺</button>
+          <button class="icon-btn" id="btn-clear" data-i18n-title="plan.clear" title="Remove every task from today">🗑</button>
           <div class="spacer"></div>
           <span class="toggle" title="Mark the immediate next task in progress automatically">Auto-advance
             <input type="checkbox" id="plan-auto" />
@@ -147,8 +147,8 @@
         </div>
 
         <details class="reflog" id="reflog" hidden>
-          <summary><span data-i18n="Reflog">Reflog</span> <span class="count" id="reflog-count"></span>
-            <label class="mini-toggle" title="Open by default on launch"><span data-i18n="always open">always open</span>
+          <summary><span data-i18n="reflog.title">Reflog</span> <span class="count" id="reflog-count"></span>
+            <label class="mini-toggle" title="Open by default on launch"><span data-i18n="reflog.always_open">always open</span>
               <input type="checkbox" id="reflog-open" />
             </label>
           </summary>
@@ -160,9 +160,9 @@
       <section class="view" id="view-viz">
         <div class="viz-wrap">
           <div class="viz-scopes">
-            <button data-viz="day" class="active" data-i18n="Day">Day</button>
-            <button data-viz="week" data-i18n="Week">Week</button>
-            <button data-viz="month" data-i18n="Month">Month</button>
+            <button data-viz="day" class="active" data-i18n="viz.day">Day</button>
+            <button data-viz="week" data-i18n="viz.week">Week</button>
+            <button data-viz="month" data-i18n="viz.month">Month</button>
             <button id="day-pick" class="day-pick" hidden></button>
             <span class="viz-nav">
               <button id="viz-prev" title="Previous">‹</button>
@@ -173,17 +173,17 @@
           <div id="viz-bubble" class="viz-bubble" hidden></div>
           <div id="week-summaries" class="week-summaries" hidden></div>
           <div class="legend">
-            <span><i class="sw sw-work"></i><span data-i18n="working (broken line)">working (broken line)</span></span>
-            <span><i class="sw sw-flat"></i><span data-i18n="break / idle (flat)">break / idle (flat)</span></span>
-            <span><i class="sw sw-plan"></i><span data-i18n="plan pace">plan pace</span></span>
-            <span><i class="sw sw-done"></i><span data-i18n="done node">done node</span></span>
-            <span><i class="sw sw-ow"></i><span data-i18n="overwork tint">overwork tint</span></span>
+            <span><i class="sw sw-work"></i><span data-i18n="viz.legend.work">working (broken line)</span></span>
+            <span><i class="sw sw-flat"></i><span data-i18n="viz.legend.flat">break / idle (flat)</span></span>
+            <span><i class="sw sw-plan"></i><span data-i18n="viz.legend.pace">plan pace</span></span>
+            <span><i class="sw sw-done"></i><span data-i18n="viz.legend.node">done node</span></span>
+            <span><i class="sw sw-ow"></i><span data-i18n="viz.legend.tint">overwork tint</span></span>
           </div>
           <div class="viz-stats">
-            <div class="stat"><div class="v" id="st-done">0/0</div><div class="l" data-i18n="tasks done">tasks done</div></div>
-            <div class="stat"><div class="v" id="st-est">0m</div><div class="l" data-i18n="planned vs delivered">planned vs delivered</div></div>
-            <div class="stat"><div class="v" id="st-breaks">0</div><div class="l" data-i18n="breaks taken">breaks taken</div></div>
-            <div class="stat overwork"><div class="v" id="st-ow">0m</div><div class="l" data-i18n="overwork">overwork</div></div>
+            <div class="stat"><div class="v" id="st-done">0/0</div><div class="l" data-i18n="viz.stats.done">tasks done</div></div>
+            <div class="stat"><div class="v" id="st-est">0m</div><div class="l" data-i18n="viz.stats.est">planned vs delivered</div></div>
+            <div class="stat"><div class="v" id="st-breaks">0</div><div class="l" data-i18n="viz.stats.breaks">breaks taken</div></div>
+            <div class="stat overwork"><div class="v" id="st-ow">0m</div><div class="l" data-i18n="viz.stats.ow">overwork</div></div>
           </div>
         </div>
       </section>

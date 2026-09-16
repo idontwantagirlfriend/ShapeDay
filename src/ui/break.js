@@ -21,8 +21,8 @@ function show(mode_) {
   proposeBox.hidden = mode !== 'propose';
   activeBox.hidden = mode !== 'counting';
   if (mode === 'counting') {
-    headline.textContent = T('On break');
-    sub.textContent = T('Look away from the screen. Really.');
+    headline.textContent = T('toast.on_break');
+    sub.textContent = T('toast.look_away');
   }
   fitWindow();
 }
@@ -107,10 +107,10 @@ document.getElementById('end').addEventListener('click', () => {
 shapeday.onEvent((ev) => {
   if (ev.type === 'break-propose') {
     show('propose');
-    headline.textContent = T('Task done.');
+    headline.textContent = T('toast.done');
     sub.textContent = ev.data?.nextTitle
-      ? `${T('Next up:')} ${ev.data.nextTitle}. ${T('Ten minutes off makes the next one faster.')}`
-      : T('Nothing queued. Ten minutes off anyway?');
+      ? T('toast.next_up', { title: ev.data.nextTitle }) + ' ' + T('toast.faster')
+      : T('toast.nothing');
     fitWindow();
   }
   if (ev.type === 'break-started') show('counting');

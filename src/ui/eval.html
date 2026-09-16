@@ -24,7 +24,7 @@
     (async () => {
       const s = await shapeday.call('day:get');
       const loc = I18N.resolve(s.settings.locale || 'auto', navigator.language);
-      const map = { ahead: ['Ahead', 'Hooray.'], 'on-track': ['On track', 'Keep it up.'], behind: ['Behind', 'Extend the ETA.'] };
+      const map = { ahead: ['eval.ahead', 'eval.hooray'], 'on-track': ['eval.on_track', 'eval.keep'], behind: ['eval.behind', 'eval.extend'] };
       for (const b of document.querySelectorAll('#evalwin [data-resp]')) {
         b.querySelector('.opt-label').textContent = I18N.t(loc, map[b.dataset.resp][0]);
         b.querySelector('.opt-sub').textContent = I18N.t(loc, map[b.dataset.resp][1]);

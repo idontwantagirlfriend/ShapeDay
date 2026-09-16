@@ -50,8 +50,8 @@ function progressFraction(s) {
 
 function headlineText(s) {
   if (s.active) return s.active.title;
-  if (s.break) return T('on break');
-  return s.day.tasks.length ? T('no task on') : 'ShapeDay';
+  if (s.break) return T('bar.on_break');
+  return s.day.tasks.length ? T('bar.no_task') : 'ShapeDay';
 }
 
 let currentStyle = null;
@@ -74,7 +74,7 @@ shapeday.onTick((s) => {
     els.top.bar.style.opacity = String(opacity);
     els.top.dot.className = `dot s-${s.break ? 'white' : s.active ? 'yellow' : 'red'}`;
     els.top.headline.textContent = headlineText(s);
-    els.top.time.textContent = `${fmt(remainingMinutes(s))} ${T('left')}`;
+    els.top.time.textContent = T('bar.left_pace', { t: fmt(remainingMinutes(s)) });
     // the entire strip IS the progress bar
     els.top.fill.style.width = `${Math.round(progressFraction(s) * 100)}%`;
     return;

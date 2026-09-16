@@ -410,6 +410,7 @@ async function run({ app, getMainWin, state, windows }) {
   await call('settings:set', { overlayStyle: 'top' });
   await sleep(1400);
   const capPos = barWin.getPosition();
+  await new Promise((r) => setTimeout(r, 1200)); // re-seat pump fully settles
   await barWin.webContents.executeJavaScript(`(() => {
     const g = document.getElementById('strip-grip');
     g.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, screenX: 500, screenY: 400 }));
@@ -821,7 +822,7 @@ async function run({ app, getMainWin, state, windows }) {
     const ph = document.getElementById('add-input').placeholder;
     const legend = [...document.querySelectorAll('.legend span')].map((x) => x.textContent).join('|');
     const dayLabel = (document.querySelector('#week-summaries .cell .day-label') || {}).textContent || '';
-    const stat = document.querySelector('#st-done') && document.querySelector('[data-i18n="tasks done"]')?.textContent;
+    const stat = document.querySelector('#st-done') && document.querySelector('[data-i18n="viz.stats.done"]')?.textContent;
     const dateRow = document.getElementById('hd-day').textContent;
     await shapeday.call('settings:set', { locale: 'auto' });
     await new Promise((r) => setTimeout(r, 900));

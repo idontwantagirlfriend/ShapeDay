@@ -68,18 +68,18 @@ $('#eta-ai').addEventListener('click', () => {
 });
 
 const HINT_AUTO = {
-  red: () => T('click → make current'),
-  yellow: () => T('current · click → finish'),
-  paused: () => T('on break · click → resume'),
-  green: () => T('click → reopen'),
-  white: () => T('click → revive (unfinished)'),
+  red: () => T('plan.hint.red'),
+  yellow: () => T('plan.hint.yellow_auto'),
+  paused: () => T('plan.hint.paused'),
+  green: () => T('plan.hint.green'),
+  white: () => T('plan.hint.white'),
 };
 const HINT_MANUAL = {
-  red: () => T('click → start'),
-  yellow: () => T('click → finish'),
-  paused: () => T('on break · click → resume'),
-  green: () => T('click → reopen'),
-  white: () => T('click → revive (unfinished)'),
+  red: () => T('plan.hint.red'),
+  yellow: () => T('plan.hint.yellow'),
+  paused: () => T('plan.hint.paused'),
+  green: () => T('plan.hint.green'),
+  white: () => T('plan.hint.white'),
 };
 
 // Rebuild the list only when it actually changed — a 1 Hz DOM rebuild would
@@ -190,7 +190,7 @@ function renderPlan() {
     const li = document.createElement('li');
     li.className = 'task';
     li.style.cursor = 'default';
-    li.innerHTML = `<span class="title" style="color:var(--text-dim)">${escapeHtml(T("List what's due. Everything starts red — click as you go."))}</span>`;
+    li.innerHTML = `<span class="title" style="color:var(--text-dim)">${escapeHtml(T('plan.empty'))}</span>`;
     list.appendChild(li);
   }
 
@@ -252,7 +252,7 @@ function renderPlan() {
     const elapsed = TimeUtil.taskElapsedMin(t, snap.now);
     if (t.status === 'yellow') stamp.textContent = `▶ ${fmtMin(elapsed)}`;
     else if (t.status === 'green') stamp.textContent = `${fmtClock(t.startedAt ?? snap.now)} → ${fmtClock(t.finishedAt ?? snap.now)} · ${fmtMin(elapsed)}`;
-    else if (t.status === 'paused') stamp.textContent = `⏸ ${T('on break')} · ${fmtMin(elapsed)} ${T('so far')}`;
+    else if (t.status === 'paused') stamp.textContent = `${T('plan.paused_stamp', { dur: fmtMin(elapsed) })}`;
     else if (t.status === 'white') stamp.textContent = 'hung';
     else stamp.textContent = '';
 
@@ -316,7 +316,7 @@ function renderPlan() {
   renderReflog(day);
 }
 
-const KIND_TEXT = { added: () => T('added'), deleted: () => T('deleted'), status: () => T('status') };
+const KIND_TEXT = { added: () => T('reflog.added'), deleted: () => T('reflog.deleted') };
 
 function renderReflog(day) {
   const log = day.reflog || [];
@@ -340,9 +340,9 @@ function renderReflog(day) {
     kind.className = `kind ${e.kind}`;
     if (e.kind === 'status') {
       kind.innerHTML =
-        `<span class="w-${e.from}">${escapeHtml(T(e.from))}</span>` +
+        `<span class="w-${e.from}">${escapeHtml(T('status.' + e.from))}</span>` +
         ' → ' +
-        `<span class="w-${e.to}">${escapeHtml(T(e.to))}</span>`;
+        `<span class="w-${e.to}">${escapeHtml(T('status.' + e.to))}</span>`;
     } else {
       kind.textContent = KIND_TEXT[e.kind] ? KIND_TEXT[e.kind]() : e.kind;
     }
@@ -517,7 +517,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---------- viz bubbles ----------
-const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => () => T(d));
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => () => T('dow.' + [1, 2, 3, 4, 5, 6, 0][i]));
 
 function placeBubble(bubble, e) {
   const wrap = document.querySelector('.viz-wrap');
@@ -656,15 +656,15 @@ function renderWeekSummaries(data) {
     cells.push(
       `<div class="cell ${text ? '' : 'empty'}" data-date="${date}">` +
         `<div class="day-label">${DOW[idx]()} ${date.slice(8)}</div>` +
-        (text ? escapeHtml(text.slice(0, 120)) : escapeHtml(T('no summary'))) +
+        (text ? escapeHtml(text.slice(0, 120)) : escapeHtml(T('viz.no_summary'))) +
         `</div>`
     );
     cur.setDate(cur.getDate() + 1);
     idx++;
   }
   const week = data.periodSummary
-    ? `<b>${T('Week summary')}</b><br>${escapeHtml(data.periodSummary.slice(0, 160))}`
-    : T('no weekly summary yet');
+    ? `<b>${T('viz.week_summary')}</b><br>${escapeHtml(data.periodSummary.slice(0, 160))}`
+    : T('viz.no_week_summary');
   box.innerHTML = `<div class="cells">${cells.join('')}</div><div class="week-cell ${data.periodSummary ? '' : 'empty'}">${week}</div>`;
   box.hidden = false;
 
@@ -760,7 +760,7 @@ async function loadReport() {
   const metrics = $('#sum-metrics');
   metrics.innerHTML = '';
   for (const [k, label] of Object.entries(METRIC_LABELS)) {
-    const labelStr = T(label);
+    const labelStr = T('metric.' + k);
     let v = r.metrics[k];
     if (v == null) continue;
     if (k.endsWith('Min')) v = fmtMin(v);
@@ -793,12 +793,12 @@ async function loadReport() {
   const source = document.createElement('div');
   source.className = 'issue-source';
   source.textContent = sumError
-    ? `${T('AI error')}: ${sumError}`
+    ? T('sum.src.error', { err: sumError })
     : ai
-      ? `AI · ${snap.settings.llm.model}`
+      ? T('sum.src.model', { model: snap.settings.llm.model })
       : aiMode
-        ? T('AI thinking…') // fired async; the llm:report event re-renders
-        : T('templated text · findings from local rules');
+        ? T('sum.src.thinking')
+        : T('sum.src.template');
   issues.appendChild(source);
   const list = ai ? ai.issues : r.issues;
   for (const i of list) {
@@ -815,7 +815,7 @@ async function loadReport() {
   if (sumScope === 'day' && snap.day.tasks.length) {
     const tbl = document.createElement('table');
     tbl.className = 'day-table';
-    tbl.innerHTML = `<tr><th>${T('task')}</th><th>${T('status')}</th><th>${T('est')}</th><th>${T('actual')}</th><th>${T('finished')}</th></tr>`;
+    tbl.innerHTML = `<tr><th>${T('sum.col.task')}</th><th>${T('sum.col.status')}</th><th>${T('sum.col.est')}</th><th>${T('sum.col.actual')}</th><th>${T('sum.col.finished')}</th></tr>`;
     for (const t of snap.day.tasks) {
       const tr = document.createElement('tr');
       const cells = [
@@ -953,7 +953,7 @@ shapeday.onEvent((ev) => {
     // via etaReviewed=false when it had been approved)
     if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
-    st.textContent = `${T('AI adjusted')} ${ev.data.applied} ${T('estimate(s) — review again')}`;
+    st.textContent = T('eta.ai_adjusted', { n: ev.data.applied });
     st.className = 'llm-status ok';
   }
   if (ev.type === 'llm:status' && !ev.data.ok) {
@@ -964,7 +964,7 @@ shapeday.onEvent((ev) => {
     }
     if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
-    st.textContent = `AI unreachable (${ev.data.where}): ${ev.data.error}`;
+    st.textContent = T('eta.unreachable', { where: ev.data.where, error: ev.data.error });
     st.className = 'llm-status err';
   }
   if (ev.type === 'llm:report' && currentView === 'sum' && ev.data.scope === sumScope) {
@@ -979,9 +979,9 @@ function llmConfigured(s) {
 
 /** Which estimation reading is in play — named, not guessed. */
 function etaModeLabel(s) {
-  if (s.estimatorMode === 'ai' && llmConfigured(s)) return `${T('AI estimation')} · ${s.llm.model}`;
-  if (s.estimatorMode === 'ai') return T('AI estimation') + ' (' + T('smart reading') + ')';
-  return T('smart reading');
+  if (s.estimatorMode === 'ai' && llmConfigured(s)) return T('eta.mode_ai_model', { model: s.llm.model });
+  if (s.estimatorMode === 'ai') return T('eta.mode_ai_fallback');
+  return T('eta.mode_smart');
 }
 
 function renderSettings() {

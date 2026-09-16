@@ -12,11 +12,11 @@ shapeday.onEvent((ev) => {
   if (ev.type !== 'eval-prompt') return;
   const t = ev.data?.title;
   document.getElementById('eval-title').textContent = t
-    ? `${T('Halfway')} — ${t.length > 24 ? t.slice(0, 23) + '…' : t}`
-    : T('Halfway');
+    ? T('eval.title', { title: t.length > 24 ? t.slice(0, 23) + '…' : t })
+    : T('eval.half');
   const worked = Math.round(ev.data?.workedMin ?? 0);
   const est = Math.round(ev.data?.estimateMin ?? 0);
-  document.getElementById('eval-text').textContent = `${worked}m / ${est}m — ${T("Half of this task is done — how's the pace?")}`;
+  document.getElementById('eval-text').textContent = T('eval.text', { worked, est });
 });
 
 /** Size the window to its content, bottom edge pinned (never scrolls). */
