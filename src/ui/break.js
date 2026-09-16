@@ -5,6 +5,9 @@
  */
 'use strict';
 
+let locale = 'en-us';
+const T = (k) => I18N.t(locale, k);
+
 const headline = document.getElementById('headline');
 const sub = document.getElementById('sub');
 const proposeBox = document.getElementById('propose');
@@ -18,8 +21,8 @@ function show(mode_) {
   proposeBox.hidden = mode !== 'propose';
   activeBox.hidden = mode !== 'counting';
   if (mode === 'counting') {
-    headline.textContent = 'On break';
-    sub.textContent = 'Look away from the screen. Really.';
+    headline.textContent = T('On break');
+    sub.textContent = T('Look away from the screen. Really.');
   }
   fitWindow();
 }
@@ -104,10 +107,10 @@ document.getElementById('end').addEventListener('click', () => {
 shapeday.onEvent((ev) => {
   if (ev.type === 'break-propose') {
     show('propose');
-    headline.textContent = 'Task done.';
+    headline.textContent = T('Task done.');
     sub.textContent = ev.data?.nextTitle
-      ? `Next up: ${ev.data.nextTitle}. Ten minutes off makes it faster.`
-      : 'Nothing queued. Ten minutes off anyway?';
+      ? `${T('Next up:')} ${ev.data.nextTitle}. ${T('Ten minutes off makes the next one faster.')}`
+      : T('Nothing queued. Ten minutes off anyway?');
     fitWindow();
   }
   if (ev.type === 'break-started') show('counting');
@@ -115,6 +118,8 @@ shapeday.onEvent((ev) => {
 });
 
 shapeday.onTick((s) => {
+  locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
+  document.title = T('Task done.');
   if (!editingBreakMins) minsSpan.textContent = String(s.settings.breakMinutes ?? 10);
   // Adopt a break that's already running (restart mid-break, or accepted elsewhere).
   if (s.break && mode === 'propose') show('counting');

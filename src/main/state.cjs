@@ -637,6 +637,9 @@ function createState(store, hooks = {}) {
       if (patch && 'overlayStyle' in patch) {
         allowed.overlayStyle = patch.overlayStyle === 'floater' ? 'floater' : 'top';
       }
+      if (patch && 'locale' in patch) {
+        allowed.locale = ['auto', 'en-us', 'zh-hans', 'zh-hant'].includes(patch.locale) ? patch.locale : 'auto';
+      }
       if (patch && 'tintStrength' in patch) {
         const v = Math.round(Number(patch.tintStrength));
         allowed.tintStrength = Number.isFinite(v) ? Math.max(0, Math.min(200, v)) : 100;

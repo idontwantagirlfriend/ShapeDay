@@ -1,14 +1,22 @@
 'use strict';
 
+let locale = 'en-us';
+const T = (k) => I18N.t(locale, k);
+const COMPANION = { ahead: 'Hooray.', 'on-track': 'Keep it up.', behind: 'Extend the ETA.' };
+
+shapeday.call('day:get').then((s) => {
+  locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
+});
+
 shapeday.onEvent((ev) => {
   if (ev.type !== 'eval-prompt') return;
   const t = ev.data?.title;
   document.getElementById('eval-title').textContent = t
-    ? `Half of “${t.length > 24 ? t.slice(0, 23) + '…' : t}”`
-    : 'Halfway';
+    ? `${T('Halfway')} — ${t.length > 24 ? t.slice(0, 23) + '…' : t}`
+    : T('Halfway');
   const worked = Math.round(ev.data?.workedMin ?? 0);
   const est = Math.round(ev.data?.estimateMin ?? 0);
-  document.getElementById('eval-text').textContent = `${worked}m in on a ${est}m task — how's the pace?`;
+  document.getElementById('eval-text').textContent = `${worked}m / ${est}m — ${T("Half of this task is done — how's the pace?")}`;
 });
 
 /** Size the window to its content, bottom edge pinned (never scrolls). */

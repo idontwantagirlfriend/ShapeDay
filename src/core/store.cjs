@@ -23,6 +23,7 @@
       overlayStyle: 'top', // 'top' (full-width strip) | 'floater' (corner widget)
       tintStrength: 100, // % of the overwork tint: 0 hides it, 200 doubles it
       reflogOpen: true, // unfold the plan-tab reflog by default
+      locale: 'auto', // 'auto' | 'en-us' | 'zh-hans' | 'zh-hant'
       backgroundImage: '', // absolute path; rendered cover-fit (scaled, clipped, ratio kept)
       // AI is opt-in per feature, never intrusive:
       estimatorMode: 'smart',   // 'smart' (local keyword+bias reading) | 'ai'

@@ -385,7 +385,7 @@ async function run({ app, getMainWin, state, windows }) {
 
   // strip: still drags from the grip, but not from its background
   await call('settings:set', { overlayStyle: 'top' });
-  await sleep(600);
+  await sleep(1400); // settle past the 1 Hz style pump before reading positions
   const topPos = barWin.getPosition();
   await barWin.webContents.executeJavaScript(`(() => {
     const g = document.getElementById('strip-grip');
@@ -693,7 +693,9 @@ async function run({ app, getMainWin, state, windows }) {
     await new Promise((r) => setTimeout(r, 150));
     const bubble = document.getElementById('viz-bubble');
     const shown = !bubble.hidden && bubble.textContent.length > 0;
-    const cellR = cell.getBoundingClientRect();
+    // re-query: the 1 Hz render may have rebuilt the cells since capture
+    const liveCell = document.querySelector('#week-summaries .cell:not(.empty)') || cell;
+    const cellR = liveCell.getBoundingClientRect();
     const bR = bubble.getBoundingClientRect();
     const upward = bR.bottom <= cellR.top + 4; // preview sits above the cell
     const wrapR2 = document.querySelector('.viz-wrap').getBoundingClientRect();
@@ -803,6 +805,19 @@ async function run({ app, getMainWin, state, windows }) {
     return { ok: moved && back && before && chipShown && chip.hidden, why: 'moved=' + moved + ' back=' + back + ' chip=' + chipShown };
   })()`);
   check('arrows step month and day periods', nav.ok === true, JSON.stringify(nav));
+
+  // i18n: switch to zh-hans, tabs translate; back to auto restores English
+  const i18n = await win.webContents.executeJavaScript(`(async () => {
+    await shapeday.call('settings:set', { locale: 'zh-hans' });
+    await new Promise((r) => setTimeout(r, 900));
+    const zh = [...document.querySelectorAll('nav.tabs button')].map((b) => b.textContent);
+    const ph = document.getElementById('add-input').placeholder;
+    await shapeday.call('settings:set', { locale: 'auto' });
+    await new Promise((r) => setTimeout(r, 900));
+    const en = [...document.querySelectorAll('nav.tabs button')].map((b) => b.textContent);
+    return { ok: zh.join(',').includes('计划') && ph.includes('今天') && en.join(',').includes('Plan'), why: zh.join('|') + ' / ' + ph };
+  })()`);
+  check('locale switch translates the UI and restores', i18n.ok === true, JSON.stringify(i18n));
 
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');

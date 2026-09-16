@@ -7,6 +7,14 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 let snap = null;
+let locale = 'en-us';
+const T = (k) => I18N.t(locale, k);
+function applyLocale() {
+  document.documentElement.lang = locale;
+  for (const el of $$('[data-i18n]')) el.textContent = T(el.dataset.i18n);
+  for (const el of $$('[data-i18n-ph]')) el.placeholder = T(el.dataset.i18nPh);
+  for (const el of $$('[data-i18n-title]')) el.title = T(el.dataset.i18nTitle);
+}
 let currentView = 'plan';
 let sumScope = 'day';
 const aiCache = {}; // scope → last AI summary (survives local re-renders)
@@ -59,18 +67,18 @@ $('#eta-ai').addEventListener('click', () => {
 });
 
 const HINT_AUTO = {
-  red: 'click → make current',
-  yellow: 'current · click → finish',
-  paused: 'on break · click → resume',
-  green: 'click → reopen',
-  white: 'click → revive (unfinished)',
+  red: () => T('click → make current'),
+  yellow: () => T('current · click → finish'),
+  paused: () => T('on break · click → resume'),
+  green: () => T('click → reopen'),
+  white: () => T('click → revive (unfinished)'),
 };
 const HINT_MANUAL = {
-  red: 'click → start',
-  yellow: 'click → finish',
-  paused: 'on break · click → resume',
-  green: 'click → reopen',
-  white: 'click → revive (unfinished)',
+  red: () => T('click → start'),
+  yellow: () => T('click → finish'),
+  paused: () => T('on break · click → resume'),
+  green: () => T('click → reopen'),
+  white: () => T('click → revive (unfinished)'),
 };
 
 // Rebuild the list only when it actually changed — a 1 Hz DOM rebuild would
@@ -181,7 +189,7 @@ function renderPlan() {
     const li = document.createElement('li');
     li.className = 'task';
     li.style.cursor = 'default';
-    li.innerHTML = `<span class="title" style="color:var(--text-dim)">List what's due. Everything starts red — click as you go.</span>`;
+    li.innerHTML = `<span class="title" style="color:var(--text-dim)">${escapeHtml(T("List what's due. Everything starts red — click as you go."))}</span>`;
     list.appendChild(li);
   }
 
@@ -190,7 +198,7 @@ function renderPlan() {
   for (const t of day.tasks) {
     const li = document.createElement('li');
     li.className = `task ${t.status}`;
-    li.title = `${t.title} — ${HINT[t.status]}`;
+    li.title = `${t.title} — ${HINT[t.status]()}`;
 
     const grip = document.createElement('span');
     grip.className = 'grip';
@@ -273,7 +281,7 @@ function renderPlan() {
 
     const hint = document.createElement('span');
     hint.className = 'hint';
-    hint.textContent = HINT[t.status];
+    hint.textContent = HINT[t.status]();
 
     const del = document.createElement('button');
     del.className = 'del';
@@ -307,7 +315,7 @@ function renderPlan() {
   renderReflog(day);
 }
 
-const KIND_TEXT = { added: 'added', deleted: 'deleted', status: 'status' };
+const KIND_TEXT = { added: () => T('added'), deleted: () => T('deleted'), status: () => T('status') };
 
 function renderReflog(day) {
   const log = day.reflog || [];
@@ -329,8 +337,14 @@ function renderReflog(day) {
     at.textContent = fmtClock(e.at);
     const kind = document.createElement('span');
     kind.className = `kind ${e.kind}`;
-    kind.textContent =
-      e.kind === 'status' ? `${e.from} → ${e.to}` : KIND_TEXT[e.kind] || e.kind;
+    if (e.kind === 'status') {
+      kind.innerHTML =
+        `<span class="w-${e.from}">${escapeHtml(T(e.from))}</span>` +
+        ' → ' +
+        `<span class="w-${e.to}">${escapeHtml(T(e.to))}</span>`;
+    } else {
+      kind.textContent = KIND_TEXT[e.kind] ? KIND_TEXT[e.kind]() : e.kind;
+    }
     const title = document.createElement('span');
     title.textContent = e.title;
     li.append(at, kind, title);
@@ -503,7 +517,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---------- viz bubbles ----------
-const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => () => T(d));
 
 function placeBubble(bubble, e) {
   const wrap = document.querySelector('.viz-wrap');
@@ -642,15 +656,15 @@ function renderWeekSummaries(data) {
     cells.push(
       `<div class="cell ${text ? '' : 'empty'}" data-date="${date}">` +
         `<div class="day-label">${DOW[idx]} ${date.slice(8)}</div>` +
-        (text ? escapeHtml(text.slice(0, 120)) : 'no summary') +
+        (text ? escapeHtml(text.slice(0, 120)) : escapeHtml(T('no summary'))) +
         `</div>`
     );
     cur.setDate(cur.getDate() + 1);
     idx++;
   }
   const week = data.periodSummary
-    ? `<b>Week summary</b><br>${escapeHtml(data.periodSummary.slice(0, 160))}`
-    : 'no weekly summary yet';
+    ? `<b>${T('Week summary')}</b><br>${escapeHtml(data.periodSummary.slice(0, 160))}`
+    : T('no weekly summary yet');
   box.innerHTML = `<div class="cells">${cells.join('')}</div><div class="week-cell ${data.periodSummary ? '' : 'empty'}">${week}</div>`;
   box.hidden = false;
 
@@ -879,6 +893,11 @@ $('#set-overlay-style').addEventListener('change', (e) => {
   shapeday.call('settings:set', { overlayStyle: e.target.value });
 });
 
+// ---------- language ----------
+$('#set-locale').addEventListener('change', (e) => {
+  shapeday.call('settings:set', { locale: e.target.value });
+});
+
 // ---------- tint strength ----------
 $('#set-tint').addEventListener('input', (e) => {
   $('#tint-val').textContent = `${e.target.value}%`;
@@ -959,9 +978,9 @@ function llmConfigured(s) {
 
 /** Which estimation reading is in play — named, not guessed. */
 function etaModeLabel(s) {
-  if (s.estimatorMode === 'ai' && llmConfigured(s)) return `AI estimation · ${s.llm.model}`;
-  if (s.estimatorMode === 'ai') return 'AI estimation (no endpoint — smart reading)';
-  return 'smart reading';
+  if (s.estimatorMode === 'ai' && llmConfigured(s)) return `${T('AI estimation')} · ${s.llm.model}`;
+  if (s.estimatorMode === 'ai') return T('AI estimation') + ' (' + T('smart reading') + ')';
+  return T('smart reading');
 }
 
 function renderSettings() {
@@ -978,6 +997,7 @@ function renderSettings() {
   put('#set-llm-url', s.llm?.baseUrl || '');
   put('#set-llm-key', s.llm?.apiKey || '');
   put('#set-llm-model', s.llm?.model || '');
+  put('#set-locale', ['auto', 'en-us', 'zh-hans', 'zh-hant'].includes(s.locale) ? s.locale : 'auto');
   put('#set-ow-opacity', s.overlayOpacity ?? 92);
   put('#set-overlay-style', s.overlayStyle === 'floater' ? 'floater' : 'top');
   put('#set-tint', s.tintStrength ?? 100);
@@ -1018,6 +1038,12 @@ document.addEventListener('keydown', (e) => {
 // ---------- the tick ----------
 function onTick(s) {
   snap = s;
+  const wanted = I18N.resolve(s.settings.locale || 'auto', navigator.language);
+  if (wanted !== locale) {
+    locale = wanted;
+    applyLocale();
+    lastPlanSig = null; // hints are baked into rows; rebuild under the new language
+  }
   const d = new Date(s.now);
   $('#hd-day').textContent = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   $('#hd-fill').style.width = `${Math.round(s.progress.ratio * 100)}%`;

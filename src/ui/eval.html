@@ -12,12 +12,26 @@
       <h3 id="eval-title">Halfway</h3>
       <p id="eval-text">Half of this task is done — how's the pace?</p>
       <div class="opts">
-        <button data-resp="ahead">Ahead<span>Hooray.</span></button>
-        <button data-resp="on-track" class="primary">On track<span>Keep it up.</span></button>
-        <button data-resp="behind">Behind<span>Extend the ETA.</span></button>
+        <button data-resp="ahead"><span class="opt-label">Ahead</span><span class="opt-sub">Hooray.</span></button>
+        <button data-resp="on-track" class="primary"><span class="opt-label">On track</span><span class="opt-sub">Keep it up.</span></button>
+        <button data-resp="behind"><span class="opt-label">Behind</span><span class="opt-sub">Extend the ETA.</span></button>
       </div>
     </div>
   </div>
+  <script src="../core/i18n.cjs"></script>
+  <script>
+    // labels resolve once the locale arrives
+    (async () => {
+      const s = await shapeday.call('day:get');
+      const loc = I18N.resolve(s.settings.locale || 'auto', navigator.language);
+      const map = { ahead: ['Ahead', 'Hooray.'], 'on-track': ['On track', 'Keep it up.'], behind: ['Behind', 'Extend the ETA.'] };
+      for (const b of document.querySelectorAll('#evalwin [data-resp]')) {
+        b.querySelector('.opt-label').textContent = I18N.t(loc, map[b.dataset.resp][0]);
+        b.querySelector('.opt-sub').textContent = I18N.t(loc, map[b.dataset.resp][1]);
+      }
+    })();
+  </script>
+  <script src="../core/i18n.cjs"></script>
   <script src="eval.js"></script>
 </body>
 </html>

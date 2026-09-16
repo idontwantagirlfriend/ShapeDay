@@ -11,6 +11,9 @@
  */
 'use strict';
 
+let locale = 'en-us';
+const T = (k) => I18N.t(locale, k);
+
 const $id = (id) => document.getElementById(id);
 const els = {
   top: { bar: $id('topbar'), dot: $id('top-dot'), headline: $id('top-headline'), time: $id('top-time'), grip: $id('strip-grip'), fill: $id('strip-fill') },
@@ -47,8 +50,8 @@ function progressFraction(s) {
 
 function headlineText(s) {
   if (s.active) return s.active.title;
-  if (s.break) return 'on break';
-  return s.day.tasks.length ? 'no task on' : 'ShapeDay';
+  if (s.break) return T('on break');
+  return s.day.tasks.length ? T('no task on') : 'ShapeDay';
 }
 
 let currentStyle = null;
@@ -57,6 +60,7 @@ let currentStyle = null;
 let interactive = false;
 
 shapeday.onTick((s) => {
+  locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
   const style = s.settings.overlayStyle === 'floater' ? 'fl' : 'top';
   if (style !== currentStyle) {
     currentStyle = style;
@@ -70,7 +74,7 @@ shapeday.onTick((s) => {
     els.top.bar.style.opacity = String(opacity);
     els.top.dot.className = `dot s-${s.break ? 'white' : s.active ? 'yellow' : 'red'}`;
     els.top.headline.textContent = headlineText(s);
-    els.top.time.textContent = `${fmt(remainingMinutes(s))} left`;
+    els.top.time.textContent = `${fmt(remainingMinutes(s))} ${T('left')}`;
     // the entire strip IS the progress bar
     els.top.fill.style.width = `${Math.round(progressFraction(s) * 100)}%`;
     return;
