@@ -95,7 +95,7 @@
               <option value="ai">AI</option>
             </select><span class="help" data-help="Templated text: your mustache template over the report metrics, fully offline. AI: the model writes the headline and pinpoints the issues.">i</span></span>
           </label>
-          <label class="col">Summary template
+          <label class="col"><span data-i18n="set.template">Summary template</span>
             <textarea id="set-sum-template" rows="3" spellcheck="false"></textarea>
             <span class="help" data-help="Mustache variables: {{tasksDone}} {{tasksTotal}} {{tasksHung}} {{plannedMin}} {{actualMin}} {{estBias}} {{overworkDays}} {{overworkMin}} {{breaks}} {{breakMin}} {{longestNoBreakMin}} {{daysTracked}} {{scope}} — unknowns render empty.">i</span>
           </label>
@@ -131,7 +131,7 @@
           <button class="add-round" id="add-btn" data-i18n-title="plan.add_title" title="List it">＋</button>
         </div>
         <div class="eta-banner" id="eta-banner" hidden>
-          <b>Review ETAs.</b> <span id="eta-mode" class="mode-tag"></span>
+          <b data-i18n="eta.banner">Review ETAs.</b> <span id="eta-mode" class="mode-tag"></span>
           <button id="eta-ai" hidden data-i18n-title="eta.refine" title="Ask the configured AI to re-estimate every unstarted task" data-i18n="eta.refine">Refine with AI</button>
           <span class="llm-status" id="eta-llm-status"></span>
           <button id="eta-ok" data-i18n="eta.ok">Looks right</button>
@@ -141,7 +141,7 @@
           <button class="icon-btn" id="btn-reset" data-i18n-title="plan.reset" title="Keep titles, everything back to red">↺</button>
           <button class="icon-btn" id="btn-clear" data-i18n-title="plan.clear" title="Remove every task from today">🗑</button>
           <div class="spacer"></div>
-          <span class="toggle" title="Mark the immediate next task in progress automatically">Auto-advance
+          <span class="toggle" title="Mark the immediate next task in progress automatically"><span data-i18n="plan.auto">Auto-advance</span>
             <input type="checkbox" id="plan-auto" />
           </span>
         </div>
@@ -192,12 +192,12 @@
       <section class="view" id="view-sum">
         <div class="sum-bar">
           <div class="sum-scopes">
-            <button data-scope="day" class="active">Day</button>
-            <button data-scope="week">Week</button>
-            <button data-scope="month">Month</button>
-            <button data-scope="year">Year</button>
+            <button data-scope="day" class="active" data-i18n="viz.day">Day</button>
+            <button data-scope="week" data-i18n="viz.week">Week</button>
+            <button data-scope="month" data-i18n="viz.month">Month</button>
+            <button data-scope="year" data-i18n="viz.year">Year</button>
           </div>
-          <button id="btn-resummarize" hidden>⟳ Re-summarize</button>
+          <button id="btn-resummarize" hidden>⟳ <span data-i18n="sum.resummarize">Re-summarize</span></button>
         </div>
         <div class="metrics" id="sum-metrics"></div>
         <div class="issues" id="sum-issues"></div>

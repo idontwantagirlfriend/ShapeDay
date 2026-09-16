@@ -108,20 +108,32 @@ shapeday.onEvent((ev) => {
   if (ev.type === 'break-propose') {
     show('propose');
     headline.textContent = T('toast.done');
+    const n = breakSetting.minutes;
     sub.textContent = ev.data?.nextTitle
-      ? T('toast.next_up', { title: ev.data.nextTitle }) + ' ' + T('toast.faster')
-      : T('toast.nothing');
+      ? T('toast.next_up', { title: ev.data.nextTitle }) + ' ' + T('toast.faster', { n })
+      : T('toast.nothing', { n });
     fitWindow();
   }
   if (ev.type === 'break-started') show('counting');
   if (ev.type === 'break-over' || ev.type === 'break-skipped') mode = 'propose';
 });
 
-shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs));
+
+let breakSetting = { minutes: 10, locale: 'en-us' };
+shapeday.call('i18n:get').then((r) => { I18N.setCatalogs(r.catalogs); paintAccept(); });
+shapeday.call('day:get').then((s) => { if (s && s.settings) { breakSetting.locale = I18N.resolve(s.settings.locale || 'auto', navigator.language); } });
+
+function paintAccept() {
+  document.getElementById('accept-pre').textContent = T('toast.take_a');
+  document.getElementById('accept-post').textContent = T('toast.min_break');
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = T(el.dataset.i18n);
+}
 
 shapeday.onTick((s) => {
-  locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
+  const newLocale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
+  if (newLocale !== locale) { locale = newLocale; paintAccept(); }
   document.title = T('Task done.');
+  breakSetting = { minutes: s.settings.breakMinutes ?? 10, locale };
   if (!editingBreakMins) minsSpan.textContent = String(s.settings.breakMinutes ?? 10);
   // Adopt a break that's already running (restart mid-break, or accepted elsewhere).
   if (s.break && mode === 'propose') show('counting');

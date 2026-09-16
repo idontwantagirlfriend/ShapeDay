@@ -13,14 +13,14 @@
     <p class="sub" id="sub">Ten minutes off makes the next one faster.</p>
     <div id="propose">
       <div class="row">
-        <button class="primary" id="accept">Take a <span class="break-mins" id="break-mins">10</span>-min break</button>
-        <button id="skip">Skip — keep going</button>
+        <button class="primary" id="accept"><span id="accept-pre">Take a</span> <span class="break-mins" id="break-mins">10</span><span id="accept-post">-min break</span></button>
+        <button id="skip" data-i18n="toast.skip">Skip — keep going</button>
       </div>
     </div>
     <div id="active" hidden>
       <div class="countdown" id="countdown">10:00</div>
       <div class="row">
-        <button id="end">Back to work</button>
+        <button id="end" data-i18n="toast.back">Back to work</button>
       </div>
     </div>
     </div>

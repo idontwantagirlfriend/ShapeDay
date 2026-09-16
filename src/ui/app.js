@@ -964,7 +964,9 @@ shapeday.onEvent((ev) => {
     }
     if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
-    st.textContent = T('eta.unreachable', { where: ev.data.where, error: ev.data.error });
+    st.textContent = ev.data.nothingToRefine
+      ? T('eta.nothing_to_refine')
+      : T('eta.unreachable', { where: ev.data.where, error: ev.data.error });
     st.className = 'llm-status err';
   }
   if (ev.type === 'llm:report' && currentView === 'sum' && ev.data.scope === sumScope) {

@@ -272,6 +272,7 @@ function createState(store, hooks = {}) {
         emit('llm:status', {
           ok: false,
           where: 'etas',
+          nothingToRefine: true, // renderer swaps in the localized eta.nothing_to_refine
           error: 'nothing to refine: every task is done, hung, or hand-edited',
         });
         onDirty();

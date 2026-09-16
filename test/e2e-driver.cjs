@@ -833,8 +833,8 @@ async function run({ app, getMainWin, state, windows }) {
     await new Promise((r) => setTimeout(r, 900));
     const en = [...document.querySelectorAll('nav.tabs button')].map((b) => b.textContent);
     return {
-      ok: zh.join(',').includes('计划') && ph.includes('今天') && en.join(',').includes('Plan') &&
-        legend.includes('虚线') && stat === '完成任务' && /[一二三四五六七]月|周/.test(dateRow) &&
+      ok: zh.join(',').includes('计划') && ph.includes('有什么') && en.join(',').includes('Plan') &&
+        legend.includes('工作中') && stat === '任务完成数' && /[一二三四五六七]月|周/.test(dateRow) &&
         !dayLabel.includes('=>') && !dayLabel.includes('T('),
       why: zh.join('|') + ' / ' + ph + ' / ' + legend + ' / ' + dateRow,
     };

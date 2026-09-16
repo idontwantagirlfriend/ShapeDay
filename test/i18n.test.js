@@ -19,13 +19,13 @@ test('resolve maps platform tags onto the three locales', () => {
 
 test('t translates enum keys; unknown keys surface as themselves', () => {
   assert.strictEqual(I18N.t('zh-hans', 'tabs.plan'), '计划');
-  assert.strictEqual(I18N.t('zh-hant', 'viz.week_summary'), '週總結');
+  assert.strictEqual(I18N.t('zh-hant', 'viz.week_summary'), '本週摘要');
   assert.strictEqual(I18N.t('en-us', 'tabs.plan'), 'Plan');
   assert.strictEqual(I18N.t('zh-hans', 'no.such.key'), 'no.such.key');
 });
 
 test('templates interpolate placeholders with per-language word order', () => {
-  assert.strictEqual(I18N.t('zh-hans', 'eta.ai_adjusted', { n: 3 }), 'AI 调整了 3 项预计，请再核对');
+  assert.strictEqual(I18N.t('zh-hans', 'eta.ai_adjusted', { n: 3 }), 'AI更改了3项估时，看一下');
   assert.strictEqual(I18N.t('en-us', 'eta.ai_adjusted', { n: 3 }), 'AI adjusted 3 estimate(s) — review again');
   assert.ok(I18N.t('en-us', 'eta.ai_adjusted').includes('{n}')); // missing param stays visible
 });
@@ -49,4 +49,25 @@ test('YAML catalogs: no duplicate keys per file (last-wins is silent in YAML)', 
     const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
     assert.deepStrictEqual(dupes, [], `${loc} duplicate keys: ${dupes.join(', ')}`);
   }
+});
+
+test('every catalog key is referenced by the app (no dead entries)', () => {
+  const en = load('en-us');
+  // all app source, renderers included (eval.html carries an inline I18N.t map)
+  const files = [];
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = `${d}/${e.name}`;
+      if (e.isDirectory()) walk(p);
+      else if (/\.(js|cjs|html)$/.test(e.name)) files.push(fs.readFileSync(p, 'utf8'));
+    }
+  })('src');
+  const all = files.join('\n');
+  // referenced = quoted literal (call site or data-i18n attribute), or an enum
+  // namespace assembled dynamically at the call site — T('status.' + from)
+  // covers status.red, T('metric.' + k) covers metric.daysTracked, etc.
+  const quoted = (k) => all.includes(`'${k}'`) || all.includes(`"${k}"`);
+  const dynamicNs = (k) => all.includes(`'${k.slice(0, k.lastIndexOf('.'))}.' +`);
+  const dead = Object.keys(en).filter((k) => !quoted(k) && !dynamicNs(k));
+  assert.deepStrictEqual(dead, [], 'keys with no call site: ' + dead.join(', '));
 });
