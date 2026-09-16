@@ -1,9 +1,10 @@
 'use strict';
 
 let locale = 'en-us';
-const T = (k) => I18N.t(locale, k);
+const T = (k, p) => I18N.t(locale, k, p);
 const COMPANION = { ahead: 'Hooray.', 'on-track': 'Keep it up.', behind: 'Extend the ETA.' };
 
+shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs));
 shapeday.call('day:get').then((s) => {
   locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
 });

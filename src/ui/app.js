@@ -8,7 +8,7 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 let snap = null;
 let locale = 'en-us';
-const T = (k) => I18N.t(locale, k);
+const T = (k, p) => I18N.t(locale, k, p);
 const INTL_TAG = { 'en-us': 'en-US', 'zh-hans': 'zh-CN', 'zh-hant': 'zh-TW' };
 function applyLocale() {
   document.documentElement.lang = locale;
@@ -1055,5 +1055,6 @@ function onTick(s) {
   renderSettings();
   if (currentView === 'viz') renderViz();
 }
+shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs)); // catalogs come from YAML via the main process
 shapeday.onTick(onTick);
 shapeday.call('day:get').then(onTick);

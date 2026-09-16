@@ -6,7 +6,7 @@
 'use strict';
 
 let locale = 'en-us';
-const T = (k) => I18N.t(locale, k);
+const T = (k, p) => I18N.t(locale, k, p);
 
 const headline = document.getElementById('headline');
 const sub = document.getElementById('sub');
@@ -116,6 +116,8 @@ shapeday.onEvent((ev) => {
   if (ev.type === 'break-started') show('counting');
   if (ev.type === 'break-over' || ev.type === 'break-skipped') mode = 'propose';
 });
+
+shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs));
 
 shapeday.onTick((s) => {
   locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);

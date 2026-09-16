@@ -22,6 +22,8 @@
   <script>
     // labels resolve once the locale arrives
     (async () => {
+      const r = await shapeday.call('i18n:get');
+      I18N.setCatalogs(r.catalogs);
       const s = await shapeday.call('day:get');
       const loc = I18N.resolve(s.settings.locale || 'auto', navigator.language);
       const map = { ahead: ['eval.ahead', 'eval.hooray'], 'on-track': ['eval.on_track', 'eval.keep'], behind: ['eval.behind', 'eval.extend'] };

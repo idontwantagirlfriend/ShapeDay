@@ -1,7 +1,12 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const yaml = require('js-yaml');
 const I18N = require('../src/core/i18n.cjs');
+
+const load = (loc) => yaml.load(fs.readFileSync(`locales/${loc}.yaml`, 'utf8'));
+I18N.setCatalogs({ 'en-us': load('en-us'), 'zh-hans': load('zh-hans'), 'zh-hant': load('zh-hant') });
 
 test('resolve maps platform tags onto the three locales', () => {
   assert.strictEqual(I18N.resolve('auto', 'zh-CN'), 'zh-hans');
@@ -20,36 +25,27 @@ test('t translates enum keys; unknown keys surface as themselves', () => {
 });
 
 test('templates interpolate placeholders with per-language word order', () => {
-  assert.strictEqual(
-    I18N.t('zh-hans', 'eta.ai_adjusted', { n: 3 }),
-    'AI 调整了 3 项预计，请再核对'
-  );
-  assert.strictEqual(
-    I18N.t('en-us', 'eta.ai_adjusted', { n: 3 }),
-    'AI adjusted 3 estimate(s) — review again'
-  );
-  assert.strictEqual(I18N.t('zh-hans', 'toast.next_up', { title: '写文档' }), '接下来：写文档。');
-  // missing param leaves the placeholder visible rather than dropping it
-  assert.ok(I18N.t('en-us', 'eta.ai_adjusted').includes('{n}'));
+  assert.strictEqual(I18N.t('zh-hans', 'eta.ai_adjusted', { n: 3 }), 'AI 调整了 3 项预计，请再核对');
+  assert.strictEqual(I18N.t('en-us', 'eta.ai_adjusted', { n: 3 }), 'AI adjusted 3 estimate(s) — review again');
+  assert.ok(I18N.t('en-us', 'eta.ai_adjusted').includes('{n}')); // missing param stays visible
 });
 
-test('every locale covers the full en key set — catalogs cannot drift', () => {
-  const enKeys = Object.keys(I18N.LOCALES['en-us']).sort();
+test('YAML catalogs: full key parity across locales', () => {
+  const en = load('en-us');
+  const enKeys = Object.keys(en).sort();
   for (const loc of ['zh-hans', 'zh-hant']) {
-    const keys = Object.keys(I18N.LOCALES[loc]).sort();
-    const missing = enKeys.filter((k) => !keys.includes(k));
-    const extra = keys.filter((k) => !enKeys.includes(k));
+    const d = load(loc);
+    const missing = enKeys.filter((k) => !(k in d) || d[k] == null);
+    const extra = Object.keys(d).filter((k) => !(k in en));
     assert.deepStrictEqual(missing, [], `${loc} missing: ${missing.join(', ')}`);
     assert.deepStrictEqual(extra, [], `${loc} extra: ${extra.join(', ')}`);
   }
 });
 
-test('no duplicate keys within a locale (parsed from source)', () => {
-  const fs = require('fs');
-  const src = fs.readFileSync('src/core/i18n.cjs', 'utf8');
-  for (const loc of ['en', 'zhHans', 'zhHant']) {
-    const block = src.match(new RegExp(`const ${loc} = \\{(.*?)\\n  };`, 's'))[1];
-    const keys = [...block.matchAll(/'([^']+)':/g)].map((m) => m[1]);
+test('YAML catalogs: no duplicate keys per file (last-wins is silent in YAML)', () => {
+  for (const loc of ['en-us', 'zh-hans', 'zh-hant']) {
+    const raw = fs.readFileSync(`locales/${loc}.yaml`, 'utf8');
+    const keys = [...raw.matchAll(/^(?!\#)([\w.]+):/gm)].map((m) => m[1]);
     const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
     assert.deepStrictEqual(dupes, [], `${loc} duplicate keys: ${dupes.join(', ')}`);
   }

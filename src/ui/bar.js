@@ -12,7 +12,7 @@
 'use strict';
 
 let locale = 'en-us';
-const T = (k) => I18N.t(locale, k);
+const T = (k, p) => I18N.t(locale, k, p);
 
 const $id = (id) => document.getElementById(id);
 const els = {
@@ -58,6 +58,8 @@ let currentStyle = null;
 // top strip only: mirror of the window's mouse policy, so redundant
 // toggles don't spam IPC. Main applies the base policy in applyBarStyle.
 let interactive = false;
+
+shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs));
 
 shapeday.onTick((s) => {
   locale = I18N.resolve(s.settings.locale || 'auto', navigator.language);

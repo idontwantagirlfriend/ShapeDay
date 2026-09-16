@@ -9,8 +9,20 @@ const crypto = require('crypto');
 const { app, Tray, Menu, ipcMain, globalShortcut, nativeImage, dialog } = require('electron');
 
 const Store = require('../core/store.cjs');
+const I18N = require('../core/i18n.cjs');
 const { createState } = require('./state.cjs');
 const windows = require('./windows.cjs');
+
+// per-locale YAML catalogs, read once at boot and served to every renderer
+const CATALOGS = {};
+for (const loc of ['en-us', 'zh-hans', 'zh-hant']) {
+  try {
+    CATALOGS[loc] = I18N.loadCatalog(path.join(__dirname, '..', '..', 'locales'), loc);
+  } catch (e) {
+    console.error(`[i18n] ${loc} catalog failed:`, e.message);
+  }
+}
+I18N.setCatalogs(CATALOGS);
 
 const store = Store.open(path.join(app.getPath('userData'), 'shapeday.json'));
 
@@ -229,6 +241,9 @@ function handleOverlayDrag(senderId, target, p) {
 }
 
 ipcMain.handle('shapeday:call', async (_e, { kind, payload }) => {
+  if (kind === 'i18n:get') {
+    return { catalogs: CATALOGS };
+  }
   if (kind === 'focusMain') {
     showMain();
     return { ok: true };

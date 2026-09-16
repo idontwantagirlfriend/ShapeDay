@@ -6,6 +6,7 @@ files:
   - src/**/*
   - assets/**/*
   - prompts/**/*
+  - locales/**/*
   - package.json
   - "!assets/raw/**"
 asar: true
