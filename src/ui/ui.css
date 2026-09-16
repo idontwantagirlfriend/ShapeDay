@@ -677,7 +677,8 @@ html.overlay, html.overlay body { background: transparent; }
   line-height: 1;
   cursor: grab;
   border-radius: 999px;
-  background: rgba(22, 24, 29, 0.65);
+  background: transparent; /* no veil: the headline beneath stays readable */
+  text-shadow: 0 0 6px rgba(22, 24, 29, 0.9); /* glyph contrast without a pill */
   transition: color 0.12s;
 }
 .topbar .strip-grip:hover { color: var(--accent); }
