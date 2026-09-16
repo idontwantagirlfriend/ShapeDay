@@ -296,6 +296,10 @@
   function render(canvas, day, bounds, now) {
     state.mode = 'day';
     canvas._hits = null;
+    // compact: 300px so the whole day view (chart + stats) fits one page
+    const dpr = window.devicePixelRatio || 1;
+    canvas._dpr = dpr;
+    canvas.height = Math.round(300 * dpr);
     state.chart = build(day, bounds, now);
     state.canvas = canvas;
     draw(canvas);

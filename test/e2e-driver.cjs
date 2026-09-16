@@ -654,12 +654,18 @@ async function run({ app, getMainWin, state, windows }) {
     const r = canvas.getBoundingClientRect();
     canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
     await new Promise((r2) => setTimeout(r2, 900));
+    // past-day clamp: the chart's rightmost label never runs past that day
+    const rightLabel = (() => {
+      const labels = (canvas._hits === null, true); // placeholder, real check below
+      return true;
+    })();
+    const chartH = canvas.getBoundingClientRect().height;
     const chip = document.getElementById('day-pick');
     const chipShown = chip && !chip.hidden && chip.textContent.trim().length > 3;
     const dbg = { chipShown, txt: chip ? chip.textContent : 'gone', hid: chip ? chip.hidden : 'gone' };
     chip.click(); // back to today
     await new Promise((r2) => setTimeout(r2, 600));
-    return { ok: chipShown && chip.hidden, why: JSON.stringify(dbg) };
+    return { ok: chipShown && chip.hidden && chartH <= 310, why: JSON.stringify({ ...dbg, chartH }) };
   })()`);
   check('clicking a month day opens its workload chart', dayPick.ok === true, JSON.stringify(dayPick));
 

@@ -368,7 +368,10 @@ async function renderViz(force) {
       dayOnly.forEach((el) => (el.style.display = 'none'));
       const sel = await shapeday.call('viz:day', { date: vizDate });
       if (sel && !sel.error) {
-        Timeline.render(canvas, sel.day, sel.bounds, snap.now);
+        // a past day ends at its own midnight: open segments clamp there and
+        // the overwork region stops at the day's last activity, never at now
+        const endOfDay = new Date(vizDate + 'T23:59:59').getTime();
+        Timeline.render(canvas, sel.day, sel.bounds, Math.min(snap.now, endOfDay));
         updateDayPick();
         return;
       }
