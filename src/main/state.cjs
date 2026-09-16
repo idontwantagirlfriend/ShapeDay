@@ -735,9 +735,11 @@ function createState(store, hooks = {}) {
       return { date, day, bounds };
     },
 
-    'viz:days': ({ scope }) => {
+    'viz:days': ({ scope, anchor }) => {
       const s = store.settings;
-      const key = TimeUtil.todayKey();
+      // navigation: the grid centers on the anchor's week/month, defaulting to today
+      const key =
+        anchor && /^\d{4}-\d{2}-\d{2}$/.test(String(anchor)) ? anchor : TimeUtil.todayKey();
       const today = new Date(key + 'T00:00:00');
       const pad = (x) => String(x).padStart(2, '0');
       const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -778,7 +780,12 @@ function createState(store, hooks = {}) {
         };
       });
       const periodSummary = store.summary(periodKeyFor(scope, key))?.recap || '';
-      return { scope, fromKey: keyOf(from), toKey: keyOf(to), todayKey: key, periodSummary, days };
+      return {
+        scope, fromKey: keyOf(from), toKey: keyOf(to),
+        anchorKey: key,
+        todayKey: TimeUtil.todayKey(),
+        periodSummary, days,
+      };
     },
   };
 

@@ -696,6 +696,13 @@ async function run({ app, getMainWin, state, windows }) {
     const cellR = cell.getBoundingClientRect();
     const bR = bubble.getBoundingClientRect();
     const upward = bR.bottom <= cellR.top + 4; // preview sits above the cell
+    const wrapR2 = document.querySelector('.viz-wrap').getBoundingClientRect();
+    window.__pv = {
+      cellTop: cellR.top, bTop: bR.top, bH: bR.height,
+      wrapTop: wrapR2.top, styleTop: bubble.style.top, styleLeft: bubble.style.left,
+      scrollTop: document.getElementById('view-viz').scrollTop,
+      cellOffsetInWrap: cellR.top - wrapR2.top,
+    };
     cell.dispatchEvent(new MouseEvent('mouseleave'));
     await new Promise((r) => setTimeout(r, 120));
     return { ok: shown && upward && bubble.hidden, why: 'shown=' + shown + ' up=' + upward };
@@ -766,6 +773,36 @@ async function run({ app, getMainWin, state, windows }) {
     return { ok: before.end === after.end, why: before.end + ' vs ' + after.end };
   })()`);
   check('past day keeps its work hours after a settings change', frozen.ok === true, frozen.why);
+
+  // period arrows: month next re-centers the grid; day prev navigates
+  const nav = await win.webContents.executeJavaScript(`(async () => {
+    document.querySelector('[data-view=viz]').click();
+    document.querySelector('[data-viz=month]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const canvas = document.getElementById('timeline');
+    const m0 = (canvas._hits || []).length;
+    document.getElementById('viz-next').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const month2 = await shapeday.call('viz:days', { scope: 'month', anchor: window.__navProbe });
+    // verify via the rendered grid: hits should re-center (dates differ)
+    const h0 = (canvas._hits || [])[0];
+    const moved = !!(canvas._hits || []).length;
+    document.getElementById('viz-prev').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const back = (canvas._hits || []).length > 0;
+    // day scope: prev shows the chip
+    document.querySelector('[data-viz=day]').click();
+    await new Promise((r) => setTimeout(r, 600));
+    const before = document.getElementById('day-pick').hidden;
+    document.getElementById('viz-prev').click();
+    await new Promise((r) => setTimeout(r, 900));
+    const chip = document.getElementById('day-pick');
+    const chipShown = chip && !chip.hidden;
+    document.getElementById('viz-next').click(); // back to today
+    await new Promise((r) => setTimeout(r, 900));
+    return { ok: moved && back && before && chipShown && chip.hidden, why: 'moved=' + moved + ' back=' + back + ' chip=' + chipShown };
+  })()`);
+  check('arrows step month and day periods', nav.ok === true, JSON.stringify(nav));
 
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');

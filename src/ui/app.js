@@ -345,6 +345,7 @@ $('#plan-auto').addEventListener('change', (e) => {
 // ---------- visualize ----------
 let vizScope = 'day';
 let vizDate = null; // selected day for the Day chart; null = today
+let vizAnchor = null; // week/month navigation center; null = current period
 let vizData = null; // last fetched {scope, days, ...} for week/month
 let vizFetchedAt = 0;
 const VIZ_TTL = 15000; // refetch week/month data at most every 15s
@@ -391,8 +392,11 @@ async function renderViz(force) {
   }
 
   dayOnly.forEach((el) => (el.style.display = 'none'));
-  if (force || !vizData || vizData.scope !== vizScope || Date.now() - vizFetchedAt > VIZ_TTL) {
-    vizData = await shapeday.call('viz:days', { scope: vizScope });
+  // anchorKey defaults to today server-side; compare against the same default
+  const wantAnchorKey = vizAnchor || snap.date;
+  const anchorChanged = vizData?.anchorKey !== wantAnchorKey;
+  if (force || anchorChanged || !vizData || vizData.scope !== vizScope || Date.now() - vizFetchedAt > VIZ_TTL) {
+    vizData = await shapeday.call('viz:days', { scope: vizScope, anchor: vizAnchor || undefined });
     vizFetchedAt = Date.now();
     if (!vizData || vizData.scope !== vizScope) return; // scope switched mid-fetch
   }
@@ -420,10 +424,39 @@ function updateDayPick() {
 
 $('#day-pick').addEventListener('click', () => selectDay(null));
 
-$$('.viz-scopes button').forEach((b) =>
+// period navigation: ‹ › step day/week/month
+const shiftDate = (dateKey, days) => {
+  const d = new Date(dateKey + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+function stepPeriod(dir) {
+  if (vizScope === 'day') {
+    selectDay(shiftDate(vizDate || snap.date, dir));
+    return;
+  }
+  const days = vizScope === 'week' ? 7 * dir : 0;
+  if (vizScope === 'month') {
+    const base = new Date((vizAnchor || snap.date) + 'T00:00:00');
+    base.setDate(1);
+    base.setMonth(base.getMonth() + dir);
+    const p = (x) => String(x).padStart(2, '0');
+    vizAnchor = `${base.getFullYear()}-${p(base.getMonth() + 1)}-${p(base.getDate())}`;
+  } else {
+    vizAnchor = shiftDate(vizAnchor || snap.date, days);
+  }
+  hideVizBubble();
+  renderViz(true);
+}
+$('#viz-prev').addEventListener('click', () => stepPeriod(-1));
+$('#viz-next').addEventListener('click', () => stepPeriod(1));
+
+$$('.viz-scopes button[data-viz]').forEach((b) =>
   b.addEventListener('click', () => {
     vizScope = b.dataset.viz;
-    $$('.viz-scopes button').forEach((x) => x.classList.toggle('active', x === b));
+    vizAnchor = null; // a fresh scope starts at the current period
+    $$('.viz-scopes button[data-viz]').forEach((x) => x.classList.toggle('active', x === b));
     hideVizBubble();
     renderViz(true);
   })
@@ -636,7 +669,7 @@ function bindCellPreviews(box, dates, byKey, data) {
   const wrap = document.querySelector('.viz-wrap');
   const bubble = $('#viz-bubble');
   const show = (text, cell) => {
-    if (!text) return;
+    if (!text || !cell.isConnected) return; // stale cell from a re-render
     bubble.textContent = text;
     bubble.hidden = false;
     const wrapR = wrap.getBoundingClientRect();

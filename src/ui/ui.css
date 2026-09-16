@@ -355,6 +355,8 @@ input[type="range"] { width: 104px; accent-color: var(--accent); }
 .viz-wrap { max-width: 980px; }
 .viz-scopes { display: flex; gap: 8px; margin-bottom: 12px; }
 .viz-scopes button.active { background: var(--accent); color: #10141b; border-color: transparent; font-weight: 600; }
+.viz-scopes .viz-nav { margin-left: auto; display: inline-flex; gap: 6px; }
+.viz-scopes .viz-nav button { padding: 4px 12px; font-size: 1rem; line-height: 1; }
 .viz-scopes .day-pick {
   background: transparent;
   border: 1px dashed var(--accent);
