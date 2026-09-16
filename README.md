@@ -51,7 +51,7 @@ npm run assets   # normalize dropped-in icons/logos (assets/raw/)
 npm run dist:win # Windows installer + portable exe
 ```
 
-Windows targets cross-build from Linux (NSIS step needs wine); Linux builds skip exe signing/icon-embedding (no signtool there).
+Windows targets cross-build from Linux (NSIS step needs wine); Linux builds skip exe signing only — `--config.win.signExecutable=false` — while icon embedding still runs, so the brand thumbnail ships in the exe.
 
 ## Signing
 

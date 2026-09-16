@@ -16,8 +16,9 @@ win:
     - nsis
     - portable
   # Signing activates automatically when CSC_LINK + CSC_KEY_PASSWORD are set
-  # (see README: Signing). Linux builds must pass
-  # --config.win.signAndEditExecutable=false since they have no signtool.
+  # (see README: Signing). Linux builds must pass --config.win.signExecutable=false
+  # (no signtool there) — NOT signAndEditExecutable=false, which would also skip
+  # rcedit and ship the exe without the brand icon (the atom thumbnail returns).
 nsis:
   oneClick: false                     # assisted wizard → directory is selectable
   allowToChangeInstallationDirectory: true
