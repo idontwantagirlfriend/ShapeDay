@@ -810,7 +810,7 @@ for (const [id, key] of [['#set-start', 'workStart'], ['#set-end', 'workEnd']]) 
     shapeday.call('settings:set', { [key]: v });
   });
 }
-bindSetting('#set-break', 'breakMinutes', (v) => Math.max(5, Math.min(30, +v || 10)));
+bindSetting('#set-break', 'breakMinutes', (v) => Math.max(1, Math.min(120, +v || 10)));
 $('#set-auto').addEventListener('change', (e) => shapeday.call('settings:set', { autoAdvance: e.target.checked }));
 $('#set-overlay').addEventListener('change', (e) => shapeday.call('settings:set', { overlayEnabled: e.target.checked }));
 

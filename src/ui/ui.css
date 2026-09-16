@@ -137,6 +137,9 @@ nav.tabs button .k { opacity: 0.5; font-size: 0.75em; margin-left: 6px; }
 
 main { flex: 1; overflow: hidden; }
 .view { display: none; height: 100%; overflow-y: auto; padding: 18px 20px 28px; }
+/* plan/visualize fit one page; a stray scrollbar would imply otherwise */
+#view-plan, #view-viz { scrollbar-width: none; }
+#view-plan::-webkit-scrollbar, #view-viz::-webkit-scrollbar { display: none; }
 .view.active { display: block; }
 
 /* ---------- plan ---------- */
@@ -734,6 +737,17 @@ html.overlay, html.overlay body { background: transparent; }
 .toast .row { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: auto; }
 .toast .row button { white-space: normal; width: 100%; }
 .toast .countdown { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+.toast .break-mins {
+  cursor: text;
+  border: 1px solid rgba(232, 230, 227, 0.25);
+  border-radius: 6px;
+  padding: 0 5px;
+}
+.toast .break-mins-edit {
+  width: 4ch; font: inherit; font-size: 0.9rem; text-align: center;
+  padding: 0 3px; border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--bg); color: var(--text); outline: none;
+}
 .toast .countdown.late { color: var(--ow-2); }
 
 ::-webkit-scrollbar { width: 10px; }

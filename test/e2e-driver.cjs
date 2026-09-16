@@ -122,6 +122,20 @@ async function run({ app, getMainWin, state, windows }) {
   let ev = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "break-propose")');
   check('break proposal fired', ev.length === 1);
 
+  // 2b. write-in for the break length on the toast itself
+  const brkMins = await toast().webContents.executeJavaScript(`(async () => {
+    const span = document.getElementById('break-mins');
+    span.click();
+    const input = document.querySelector('.break-mins-edit');
+    if (!input) return { ok: false, why: 'no editor' };
+    input.value = '7';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    const mins = (await shapeday.call('day:get')).settings.breakMinutes;
+    return { ok: mins === 7, why: 'mins=' + mins };
+  })()`);
+  check('break minutes write-in round-trips', brkMins.ok === true, JSON.stringify(brkMins));
+
   // 3. accept break → current goes on break (paused); double-accept idempotent
   await call('break:respond', { accept: true });
   await call('break:respond', { accept: true });

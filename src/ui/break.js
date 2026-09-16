@@ -37,8 +37,44 @@ function fitWindow() {
 }
 
 document.getElementById('accept').addEventListener('click', () => {
+  if (editingBreakMins) return; // the write-in is open; don't accept by accident
   shapeday.call('break:respond', { accept: true });
   show('counting');
+});
+
+// write-in for the break length, in the same style as the plan headlines
+const minsSpan = document.getElementById('break-mins');
+let editingBreakMins = false;
+minsSpan.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (editingBreakMins) return;
+  editingBreakMins = true;
+  const input = document.createElement('input');
+  input.className = 'break-mins-edit';
+  input.type = 'text';
+  input.pattern = '\\d+';
+  input.value = String(minsSpan.textContent);
+  const close = (commit) => {
+    editingBreakMins = false;
+    const v = parseInt(input.value, 10);
+    if (commit && Number.isFinite(v) && v >= 1) {
+      minsSpan.textContent = String(v);
+      shapeday.call('settings:set', { breakMinutes: Math.min(120, v) });
+      return;
+    }
+    minsSpan.textContent = input.defaultValue || '10';
+  };
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') close(true);
+    if (ev.key === 'Escape') close(false);
+  });
+  input.addEventListener('blur', () => close(true));
+  input.addEventListener('click', (ev) => ev.stopPropagation());
+  minsSpan.textContent = '';
+  minsSpan.appendChild(input);
+  input.focus();
+  input.select();
 });
 
 // the toast is an overlay, not a notification: grab anywhere (buttons
@@ -79,6 +115,7 @@ shapeday.onEvent((ev) => {
 });
 
 shapeday.onTick((s) => {
+  if (!editingBreakMins) minsSpan.textContent = String(s.settings.breakMinutes ?? 10);
   // Adopt a break that's already running (restart mid-break, or accepted elsewhere).
   if (s.break && mode === 'propose') show('counting');
   if (mode !== 'counting') return;
