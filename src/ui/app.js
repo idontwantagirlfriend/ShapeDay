@@ -9,6 +9,7 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 let snap = null;
 let locale = 'en-us';
 const T = (k) => I18N.t(locale, k);
+const INTL_TAG = { 'en-us': 'en-US', 'zh-hans': 'zh-CN', 'zh-hant': 'zh-TW' };
 function applyLocale() {
   document.documentElement.lang = locale;
   for (const el of $$('[data-i18n]')) el.textContent = T(el.dataset.i18n);
@@ -251,7 +252,7 @@ function renderPlan() {
     const elapsed = TimeUtil.taskElapsedMin(t, snap.now);
     if (t.status === 'yellow') stamp.textContent = `▶ ${fmtMin(elapsed)}`;
     else if (t.status === 'green') stamp.textContent = `${fmtClock(t.startedAt ?? snap.now)} → ${fmtClock(t.finishedAt ?? snap.now)} · ${fmtMin(elapsed)}`;
-    else if (t.status === 'paused') stamp.textContent = `⏸ on break · ${fmtMin(elapsed)} so far`;
+    else if (t.status === 'paused') stamp.textContent = `⏸ ${T('on break')} · ${fmtMin(elapsed)} ${T('so far')}`;
     else if (t.status === 'white') stamp.textContent = 'hung';
     else stamp.textContent = '';
 
@@ -428,8 +429,7 @@ function updateDayPick() {
   const chip = $('#day-pick');
   if (!chip) return;
   if (vizScope === 'day' && vizDate) {
-    const [, m, d] = vizDate.split('-');
-    chip.textContent = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m - 1]} ${+d} ✕`;
+    chip.textContent = `${new Date(vizDate + 'T00:00:00').toLocaleDateString(INTL_TAG[locale] ?? 'en-US', { month: 'short', day: 'numeric' })} ✕`;
     chip.hidden = false;
   } else {
     chip.hidden = true;
@@ -655,7 +655,7 @@ function renderWeekSummaries(data) {
     const text = d?.summary || '';
     cells.push(
       `<div class="cell ${text ? '' : 'empty'}" data-date="${date}">` +
-        `<div class="day-label">${DOW[idx]} ${date.slice(8)}</div>` +
+        `<div class="day-label">${DOW[idx]()} ${date.slice(8)}</div>` +
         (text ? escapeHtml(text.slice(0, 120)) : escapeHtml(T('no summary'))) +
         `</div>`
     );
@@ -760,6 +760,7 @@ async function loadReport() {
   const metrics = $('#sum-metrics');
   metrics.innerHTML = '';
   for (const [k, label] of Object.entries(METRIC_LABELS)) {
+    const labelStr = T(label);
     let v = r.metrics[k];
     if (v == null) continue;
     if (k.endsWith('Min')) v = fmtMin(v);
@@ -768,7 +769,7 @@ async function loadReport() {
     d.className = 'stat';
     d.innerHTML = `<div class="v"></div><div class="l"></div>`;
     d.querySelector('.v').textContent = v;
-    d.querySelector('.l').textContent = label;
+    d.querySelector('.l').textContent = labelStr;
     metrics.appendChild(d);
   }
 
@@ -792,12 +793,12 @@ async function loadReport() {
   const source = document.createElement('div');
   source.className = 'issue-source';
   source.textContent = sumError
-    ? `AI error: ${sumError}`
+    ? `${T('AI error')}: ${sumError}`
     : ai
       ? `AI · ${snap.settings.llm.model}`
       : aiMode
-        ? 'AI thinking…' // fired async; the llm:report event re-renders
-        : 'templated text · findings from local rules';
+        ? T('AI thinking…') // fired async; the llm:report event re-renders
+        : T('templated text · findings from local rules');
   issues.appendChild(source);
   const list = ai ? ai.issues : r.issues;
   for (const i of list) {
@@ -814,7 +815,7 @@ async function loadReport() {
   if (sumScope === 'day' && snap.day.tasks.length) {
     const tbl = document.createElement('table');
     tbl.className = 'day-table';
-    tbl.innerHTML = '<tr><th>task</th><th>status</th><th>est</th><th>actual</th><th>finished</th></tr>';
+    tbl.innerHTML = `<tr><th>${T('task')}</th><th>${T('status')}</th><th>${T('est')}</th><th>${T('actual')}</th><th>${T('finished')}</th></tr>`;
     for (const t of snap.day.tasks) {
       const tr = document.createElement('tr');
       const cells = [
@@ -952,7 +953,7 @@ shapeday.onEvent((ev) => {
     // via etaReviewed=false when it had been approved)
     if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
-    st.textContent = `AI adjusted ${ev.data.applied} estimate(s) — review again`;
+    st.textContent = `${T('AI adjusted')} ${ev.data.applied} ${T('estimate(s) — review again')}`;
     st.className = 'llm-status ok';
   }
   if (ev.type === 'llm:status' && !ev.data.ok) {
@@ -1045,7 +1046,9 @@ function onTick(s) {
     lastPlanSig = null; // hints are baked into rows; rebuild under the new language
   }
   const d = new Date(s.now);
-  $('#hd-day').textContent = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  $('#hd-day').textContent = d.toLocaleDateString(INTL_TAG[locale] ?? 'en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
   $('#hd-fill').style.width = `${Math.round(s.progress.ratio * 100)}%`;
   $('#hd-pct').textContent = `${Math.round(s.progress.ratio * 100)}%`;
   renderPlan();

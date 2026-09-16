@@ -402,6 +402,13 @@ async function run({ app, getMainWin, state, windows }) {
   // capture-layer drag lifecycle: begin from the origin, moves arrive via
   // the shield path (fast drags can outrun the window — this must not stall)
   const shieldBefore = windows.ALL.filter((w) => w.webContents.getURL().includes('dragshield')).map((w) => w.isVisible());
+  // hermetic: kill leftover drags AND re-seat the bar at a known position —
+  // a style flip forces applyBarStyle to re-pin bounds deterministically
+  await win.webContents.executeJavaScript(`shapeday.call('overlay:dragEnd', {}), true`);
+  await call('settings:set', { overlayStyle: 'floater' });
+  await sleep(1400); // settle past the 1 Hz style pump
+  await call('settings:set', { overlayStyle: 'top' });
+  await sleep(1400);
   const capPos = barWin.getPosition();
   await barWin.webContents.executeJavaScript(`(() => {
     const g = document.getElementById('strip-grip');
@@ -812,10 +819,19 @@ async function run({ app, getMainWin, state, windows }) {
     await new Promise((r) => setTimeout(r, 900));
     const zh = [...document.querySelectorAll('nav.tabs button')].map((b) => b.textContent);
     const ph = document.getElementById('add-input').placeholder;
+    const legend = [...document.querySelectorAll('.legend span')].map((x) => x.textContent).join('|');
+    const dayLabel = (document.querySelector('#week-summaries .cell .day-label') || {}).textContent || '';
+    const stat = document.querySelector('#st-done') && document.querySelector('[data-i18n="tasks done"]')?.textContent;
+    const dateRow = document.getElementById('hd-day').textContent;
     await shapeday.call('settings:set', { locale: 'auto' });
     await new Promise((r) => setTimeout(r, 900));
     const en = [...document.querySelectorAll('nav.tabs button')].map((b) => b.textContent);
-    return { ok: zh.join(',').includes('计划') && ph.includes('今天') && en.join(',').includes('Plan'), why: zh.join('|') + ' / ' + ph };
+    return {
+      ok: zh.join(',').includes('计划') && ph.includes('今天') && en.join(',').includes('Plan') &&
+        legend.includes('虚线') && stat === '完成任务' && /[一二三四五六七]月|周/.test(dateRow) &&
+        !dayLabel.includes('=>') && !dayLabel.includes('T('),
+      why: zh.join('|') + ' / ' + ph + ' / ' + legend + ' / ' + dateRow,
+    };
   })()`);
   check('locale switch translates the UI and restores', i18n.ok === true, JSON.stringify(i18n));
 

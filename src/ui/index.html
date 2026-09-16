@@ -40,8 +40,8 @@
             <span class="ctl"><input type="number" id="set-break" min="5" max="30" step="1" /><span class="help" data-help="Length of the break proposed after each finished task.">i</span></span>
           </label>
           <div class="toggle-row">
-            <label class="toggle">Auto-advance <input type="checkbox" id="set-auto" /></label>
-            <label class="toggle">Overlay <input type="checkbox" id="set-overlay" /></label>
+            <label class="toggle"><span data-i18n="Auto-advance">Auto-advance</span> <input type="checkbox" id="set-auto" /></label>
+            <label class="toggle"><span data-i18n="Overlay">Overlay</span> <input type="checkbox" id="set-overlay" /></label>
           </div>
           <label><span data-i18n="Overlay opacity">Overlay opacity</span>
             <span class="ctl">
@@ -148,7 +148,7 @@
 
         <details class="reflog" id="reflog" hidden>
           <summary><span data-i18n="Reflog">Reflog</span> <span class="count" id="reflog-count"></span>
-            <label class="mini-toggle" title="Open by default on launch">always open
+            <label class="mini-toggle" title="Open by default on launch"><span data-i18n="always open">always open</span>
               <input type="checkbox" id="reflog-open" />
             </label>
           </summary>
@@ -173,17 +173,17 @@
           <div id="viz-bubble" class="viz-bubble" hidden></div>
           <div id="week-summaries" class="week-summaries" hidden></div>
           <div class="legend">
-            <span><i class="sw sw-work"></i>working (broken line)</span>
-            <span><i class="sw sw-flat"></i>break / idle (flat)</span>
-            <span><i class="sw sw-plan"></i>plan pace</span>
-            <span><i class="sw sw-done"></i>done node</span>
-            <span><i class="sw sw-ow"></i>overwork tint</span>
+            <span><i class="sw sw-work"></i><span data-i18n="working (broken line)">working (broken line)</span></span>
+            <span><i class="sw sw-flat"></i><span data-i18n="break / idle (flat)">break / idle (flat)</span></span>
+            <span><i class="sw sw-plan"></i><span data-i18n="plan pace">plan pace</span></span>
+            <span><i class="sw sw-done"></i><span data-i18n="done node">done node</span></span>
+            <span><i class="sw sw-ow"></i><span data-i18n="overwork tint">overwork tint</span></span>
           </div>
           <div class="viz-stats">
-            <div class="stat"><div class="v" id="st-done">0/0</div><div class="l">tasks done</div></div>
-            <div class="stat"><div class="v" id="st-est">0m</div><div class="l">planned vs delivered</div></div>
-            <div class="stat"><div class="v" id="st-breaks">0</div><div class="l">breaks taken</div></div>
-            <div class="stat overwork"><div class="v" id="st-ow">0m</div><div class="l">overwork</div></div>
+            <div class="stat"><div class="v" id="st-done">0/0</div><div class="l" data-i18n="tasks done">tasks done</div></div>
+            <div class="stat"><div class="v" id="st-est">0m</div><div class="l" data-i18n="planned vs delivered">planned vs delivered</div></div>
+            <div class="stat"><div class="v" id="st-breaks">0</div><div class="l" data-i18n="breaks taken">breaks taken</div></div>
+            <div class="stat overwork"><div class="v" id="st-ow">0m</div><div class="l" data-i18n="overwork">overwork</div></div>
           </div>
         </div>
       </section>
