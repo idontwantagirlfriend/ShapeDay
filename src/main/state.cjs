@@ -759,6 +759,7 @@ function createState(store, hooks = {}) {
             elapsedMin: Math.round(TimeUtil.taskElapsedMin(t, now)),
             startedAt: t.startedAt,
             finishedAt: t.finishedAt,
+            worked: t.worked || [], // the month bubble's mini chart needs the segments
           })),
         };
       });

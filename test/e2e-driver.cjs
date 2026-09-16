@@ -682,6 +682,37 @@ async function run({ app, getMainWin, state, windows }) {
   })()`);
   check('summary cells preview upward via the shared bubble', cellPrev.ok === true, JSON.stringify(cellPrev));
 
+  // summary cells open their day's chart too
+  const cellDay = await win.webContents.executeJavaScript(`(async () => {
+    const cell = document.querySelector('#week-summaries .cell[data-date]');
+    if (!cell) return { ok: false, why: 'no cell' };
+    const date = cell.dataset.date;
+    const today = (await shapeday.call('day:get')).date;
+    cell.click();
+    await new Promise((r) => setTimeout(r, 900));
+    const chip = document.getElementById('day-pick');
+    const chipShown = chip && !chip.hidden;
+    chip.click();
+    await new Promise((r) => setTimeout(r, 600));
+    return { ok: date !== today ? chipShown === true : true, why: 'date=' + date };
+  })()`);
+  check('summary cell opens its day chart', cellDay.ok === true, JSON.stringify(cellDay));
+
+  // month bubble carries the mini burn-up canvas between list and summary
+  const miniOk = await win.webContents.executeJavaScript(`(async () => {
+    const canvas = document.getElementById('timeline');
+    document.querySelector('[data-viz=month]').click();
+    await new Promise((r) => setTimeout(r, 700));
+    const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.some((t) => (t.worked || []).length));
+    if (!dh) return { ok: false, why: 'no day with worked time' };
+    const r = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
+    await new Promise((r2) => setTimeout(r2, 200));
+    const mini = document.querySelector('#viz-bubble .mini-day');
+    return { ok: !!mini && mini.width > 0, why: mini ? 'canvas present' : 'missing' };
+  })()`);
+  check('month hover bubble shows the mini day chart', miniOk.ok === true, JSON.stringify(miniOk));
+
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');
 

@@ -598,14 +598,16 @@ function renderWeekSummaries(data) {
   }
   const byKey = new Map(data.days.map((d) => [d.date, d]));
   const cells = [];
+  const dates = []; // rendered calendar dates, aligned with the cells
   const cur = new Date(data.fromKey + 'T00:00:00');
   let idx = 0;
   while (keyOf(cur) <= data.toKey) {
     const date = keyOf(cur);
+    dates.push(date);
     const d = byKey.get(date);
     const text = d?.summary || '';
     cells.push(
-      `<div class="cell ${text ? '' : 'empty'}">` +
+      `<div class="cell ${text ? '' : 'empty'}" data-date="${date}">` +
         `<div class="day-label">${DOW[idx]} ${date.slice(8)}</div>` +
         (text ? escapeHtml(text.slice(0, 120)) : 'no summary') +
         `</div>`
@@ -618,14 +620,19 @@ function renderWeekSummaries(data) {
     : 'no weekly summary yet';
   box.innerHTML = `<div class="cells">${cells.join('')}</div><div class="week-cell ${data.periodSummary ? '' : 'empty'}">${week}</div>`;
   box.hidden = false;
-  bindCellPreviews(box, data);
+
+  // every cell opens its day's chart — same gesture as clicking the column
+  box.querySelectorAll('.cell').forEach((cell) => {
+    cell.addEventListener('click', () => selectDay(cell.dataset.date));
+  });
+  bindCellPreviews(box, dates, byKey, data);
 }
 
 /** Full-text previews for the summary cells via the shared bubble. The
  *  bubble prefers to extend UPWARD so it never grows the page (a downward
  *  popup pushes the scroll area, the cursor leaves the cell, and the popup
  *  closes — the loop she reported). */
-function bindCellPreviews(box, data) {
+function bindCellPreviews(box, dates, byKey, data) {
   const wrap = document.querySelector('.viz-wrap');
   const bubble = $('#viz-bubble');
   const show = (text, cell) => {
@@ -646,8 +653,10 @@ function bindCellPreviews(box, data) {
   };
   const hide = () => hideVizBubble();
   const cells = [...box.querySelectorAll('.cell, .week-cell')];
+  // texts aligned to the RENDERED calendar cells (future days have no data),
+  // then the weekly summary for the trailing wide cell
   const texts = [
-    ...data.days.map((d) => d.summary || ''),
+    ...dates.map((date) => byKey.get(date)?.summary || ''),
     data.periodSummary || '',
   ];
   cells.forEach((cell, i) => {

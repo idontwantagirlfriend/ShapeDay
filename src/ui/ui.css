@@ -398,30 +398,32 @@ input[type="range"] { width: 104px; accent-color: var(--accent); }
 }
 .viz-bubble .taskline:hover .sub { display: block; }
 .viz-bubble .sumline { color: var(--text-dim); border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
-.week-summaries { margin-top: 10px; }
+.week-summaries { margin-top: 8px; }
 .week-summaries .cells { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .week-summaries .cell {
   position: relative;
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 0.72rem;
+  padding: 6px 9px;
+  font-size: 0.7rem;
   color: var(--text-dim);
-  min-height: 52px;
+  min-height: 40px;
   overflow: hidden;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  cursor: pointer;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
+.week-summaries .cell:hover { border-color: var(--accent); }
 .week-summaries .cell.empty { opacity: 0.4; font-style: italic; }
 .week-summaries .cell .day-label { color: var(--text); font-weight: 600; margin-bottom: 2px; }
 .week-summaries .week-cell {
   position: relative;
-  margin-top: 8px;
+  margin-top: 6px;
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 0.75rem;
+  padding: 8px 12px;
+  font-size: 0.72rem;
   color: var(--text-dim);
 }
 .week-summaries .week-cell b { color: var(--text); }
