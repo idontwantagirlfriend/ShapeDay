@@ -820,7 +820,7 @@ async function loadReport() {
       const tr = document.createElement('tr');
       const cells = [
         t.title,
-        t.status,
+        T('status.' + t.status),
         fmtMin(t.estimateMin),
         fmtMin(TimeUtil.taskElapsedMin(t, snap.now)),
         t.finishedAt ? fmtClock(t.finishedAt) : '—',
