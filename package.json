@@ -1,7 +1,7 @@
 {
   "name": "shapeday",
   "productName": "ShapeDay",
-  "version": "1.17.2",
+  "version": "1.17.3",
   "description": "Plan. Visualize. Report. A tactile day-shape work tracker with overwork awareness.",
   "main": "src/main/main.cjs",
   "license": "MIT",

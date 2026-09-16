@@ -577,13 +577,10 @@ function showMonthBubble(hit, e) {
     .join('');
   const sum = hit.summary ? `<div class="sumline">${escapeHtml(hit.summary)}</div>` : '';
   bubble.innerHTML =
-    `<h5>${Number(hit.date.slice(8))} · ${hit.tasks.length} task(s)</h5>` + rows + sum;
-  if (!sum) bubble.querySelector('.sumline')?.remove();
+    `<h5>${Number(hit.date.slice(8))} · ${hit.tasks.length} task(s)</h5>` + rows;
   const mini = miniDayCanvas(hit);
-  if (mini) {
-    const anchor = bubble.querySelector('.sumline') || bubble;
-    anchor.parentNode.insertBefore(mini, anchor);
-  }
+  if (mini) bubble.appendChild(mini); // inside the bubble, always
+  if (sum) bubble.insertAdjacentHTML('beforeend', sum);
   bubble.hidden = false;
   placeBubble(bubble, e);
 }

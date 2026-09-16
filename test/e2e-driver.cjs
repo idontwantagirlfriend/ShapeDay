@@ -719,6 +719,40 @@ async function run({ app, getMainWin, state, windows }) {
   })()`);
   check('month hover bubble shows the mini day chart', miniOk.ok === true, JSON.stringify(miniOk));
 
+  // the mini chart lives inside the bubble only — nothing trails the canvas
+  const leak = await win.webContents.executeJavaScript(`(async () => {
+    const canvas = document.getElementById('timeline');
+    const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.length);
+    if (dh) {
+      const r = canvas.getBoundingClientRect();
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
+      await new Promise((r2) => setTimeout(r2, 150));
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2 + 10, clientY: r.top + dh.y + dh.h / 2 }));
+      await new Promise((r2) => setTimeout(r2, 150));
+    }
+    document.querySelector('[data-viz=day]').click();
+    document.querySelector('[data-viz=week]').click();
+    await new Promise((r) => setTimeout(r, 400));
+    const strays = document.querySelectorAll('.viz-wrap > .mini-day, main .mini-day:not(#viz-bubble .mini-day)').length;
+    const inside = document.querySelectorAll('#viz-bubble .mini-day').length <= 1;
+    return { ok: strays === 0 && inside, why: 'strays=' + strays };
+  })()`);
+  check('mini charts stay inside the bubble, no strays across views', leak.ok === true, JSON.stringify(leak));
+
+  // frozen hours: a past day's bounds survive a global work-end change
+  const frozen = await win.webContents.executeJavaScript(`(async () => {
+    const today = (await shapeday.call('day:get')).date;
+    const y = new Date(today + 'T00:00:00'); y.setDate(y.getDate() - 1);
+    const p = (x) => String(x).padStart(2, '0');
+    const yKey = y.getFullYear() + '-' + p(y.getMonth() + 1) + '-' + p(y.getDate());
+    const before = (await shapeday.call('viz:day', { date: yKey })).bounds;
+    await shapeday.call('settings:set', { workEnd: '23:30' });
+    const after = (await shapeday.call('viz:day', { date: yKey })).bounds;
+    await shapeday.call('settings:set', { workEnd: '17:00' });
+    return { ok: before.end === after.end, why: before.end + ' vs ' + after.end };
+  })()`);
+  check('past day keeps its work hours after a settings change', frozen.ok === true, frozen.why);
+
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');
 

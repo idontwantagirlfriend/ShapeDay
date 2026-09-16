@@ -124,11 +124,23 @@ function createState(store, hooks = {}) {
     touch();
   }
 
+  /** A day keeps the work hours it lived under: charts for past days never
+   *  move when the global hours change later. Stamped at rollover (and
+   *  lazily for days the app wasn't running to close out). */
+  function freezeDayHours() {
+    const s = store.settings;
+    const todayKey = TimeUtil.todayKey();
+    for (const d of Object.values(store.daysRange('0000-01-01', '9999-12-31'))) {
+      if (d.date < todayKey && !d.hours) d.hours = { workStart: s.workStart, workEnd: s.workEnd };
+    }
+  }
+
   function tick(nowMs) {
     const now = nowMs ?? Date.now();
     const day = today();
     if (day.date !== lastDayKey) {
       lastDayKey = day.date;
+      freezeDayHours(); // close out every finished day under its own hours
       reviveHungTasks(day, now); // a brand-new day inherits yesterday's hung
     }
     const brk = activeBreak(day);
@@ -717,8 +729,9 @@ function createState(store, hooks = {}) {
     'viz:day': ({ date }) => {
       const s = store.settings;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return { error: 'bad date' };
-      const bounds = TimeUtil.workBounds(date, s.workStart, s.workEnd);
       const day = store.day(date) || { date, tasks: [], breaks: [] };
+      const hours = day.hours || s; // past days keep the hours they lived under
+      const bounds = TimeUtil.workBounds(date, hours.workStart, hours.workEnd);
       return { date, day, bounds };
     },
 
@@ -742,7 +755,8 @@ function createState(store, hooks = {}) {
       })();
       const now = Date.now();
       const days = store.daysRange(keyOf(from), keyOf(to)).map((d) => {
-        const bounds = TimeUtil.workBounds(d.date, s.workStart, s.workEnd);
+        const hours = d.hours || s; // past days keep the hours they lived under
+        const bounds = TimeUtil.workBounds(d.date, hours.workStart, hours.workEnd);
         // overwork: today runs live to `now`; past days end at their last finish stamp
         const endRef = d.date === key ? now : Math.max(bounds.end, ...d.tasks.map((t) => t.finishedAt ?? 0));
         return {
