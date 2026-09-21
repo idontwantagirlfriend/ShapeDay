@@ -429,17 +429,16 @@
       cur.setDate(cur.getDate() + 1);
     }
 
-    // shared time-of-day domain (minutes from midnight)
-    let m0 = Infinity, m1 = -Infinity;
+    // shared time-of-day domain (minutes from midnight). Every day cuts off at
+    // its own 24:00: the grid's bottom edge is midnight, so the week's longest
+    // work end can no longer stretch a day past its own end.
+    let m0 = Infinity;
     for (const d of data.days) {
-      const start = (d.workStart - new Date(d.date + 'T00:00:00').getTime()) / 60000;
-      const end = (d.workEnd - new Date(d.date + 'T00:00:00').getTime()) / 60000;
-      m0 = Math.min(m0, start);
-      m1 = Math.max(m1, end + d.overworkMin);
+      m0 = Math.min(m0, (d.workStart - new Date(d.date + 'T00:00:00').getTime()) / 60000);
     }
-    if (!isFinite(m0)) { m0 = 8 * 60; m1 = 18 * 60; }
+    if (!isFinite(m0)) m0 = 8 * 60;
     m0 = Math.max(0, m0 - 30);
-    m1 += 30;
+    const m1 = 24 * 60;
 
     const padT = 34, padB = 10;
     const colW = W / dates.length;
@@ -484,36 +483,41 @@
 
       // task blocks stacked from work start, height = planned minutes
       let cursor = startMin;
+      const cutoff = padT + plotH; // the day's 24:00 line: the grid's bottom edge
       for (const t of d.tasks) {
         const bh = Math.max(3, t.estimateMin * scale - 2);
         const by = yOf(cursor) + 1;
-        ctx.fillStyle = taskFill(t.status);
-        ctx.fillRect(x + 5, by, colW - 10, bh);
-        // wrapped title inside the block; ellipsized when it can't fit
-        let overflow = false;
-        if (bh >= 14 && colW > 40) {
-          ctx.font = '10px system-ui';
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgba(10, 12, 16, 0.85)';
-          const maxW = colW - 16;
-          const lines = wrapText(ctx, t.title, maxW);
-          const lineH = 12;
-          const maxLines = Math.max(1, Math.floor((bh - 4) / lineH));
-          const show = lines.slice(0, maxLines);
-          if (lines.length > maxLines) {
-            overflow = true;
-            const last = show[maxLines - 1];
-            show[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + '…';
+        // the day ends at 24:00: blocks planned past midnight clip at the cutoff
+        const vh = Math.min(bh, cutoff - by);
+        if (vh > 0) {
+          ctx.fillStyle = taskFill(t.status);
+          ctx.fillRect(x + 5, by, colW - 10, vh);
+          // wrapped title inside the block; ellipsized when it can't fit
+          let overflow = false;
+          if (vh >= 14 && colW > 40) {
+            ctx.font = '10px system-ui';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(10, 12, 16, 0.85)';
+            const maxW = colW - 16;
+            const lines = wrapText(ctx, t.title, maxW);
+            const lineH = 12;
+            const maxLines = Math.max(1, Math.floor((vh - 4) / lineH));
+            const show = lines.slice(0, maxLines);
+            if (lines.length > maxLines) {
+              overflow = true;
+              const last = show[maxLines - 1];
+              show[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + '…';
+            }
+            show.forEach((ln, i) => ctx.fillText(ln, x + 8, by + 5 + i * lineH));
           }
-          show.forEach((ln, i) => ctx.fillText(ln, x + 8, by + 5 + i * lineH));
+          hits.push({
+            kind: 'task',
+            x: x + 5, y: by, w: colW - 10, h: vh,
+            date, title: t.title, status: t.status, overflow,
+            startedAt: t.startedAt, finishedAt: t.finishedAt,
+            estimateMin: t.estimateMin, elapsedMin: t.elapsedMin,
+          });
         }
-        hits.push({
-          kind: 'task',
-          x: x + 5, y: by, w: colW - 10, h: bh,
-          date, title: t.title, status: t.status, overflow,
-          startedAt: t.startedAt, finishedAt: t.finishedAt,
-          estimateMin: t.estimateMin, elapsedMin: t.elapsedMin,
-        });
         cursor += t.estimateMin;
       }
 

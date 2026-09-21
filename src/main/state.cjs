@@ -763,8 +763,14 @@ function createState(store, hooks = {}) {
       const days = store.daysRange(keyOf(from), keyOf(to)).map((d) => {
         const hours = d.hours || s; // past days keep the hours they lived under
         const bounds = TimeUtil.workBounds(d.date, hours.workStart, hours.workEnd);
-        // overwork: today runs live to `now`; past days end at their last finish stamp
-        const endRef = d.date === key ? now : Math.max(bounds.end, ...d.tasks.map((t) => t.finishedAt ?? 0));
+        // overwork: today runs live to `now`; past days end at their last finish
+        // stamp. Either way the day cuts off at its own 24:00 — a finish stamp
+        // past midnight or a past anchor day must not accrue overwork beyond it.
+        const midnight = new Date(d.date + 'T00:00:00').getTime() + 24 * 60 * TimeUtil.MIN;
+        const endRef = Math.min(
+          midnight,
+          d.date === key ? now : Math.max(bounds.end, ...d.tasks.map((t) => t.finishedAt ?? 0))
+        );
         return {
           date: d.date,
           workStart: bounds.start,

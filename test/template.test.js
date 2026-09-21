@@ -94,6 +94,45 @@ test('hung tasks revive on top of the next day, exactly once', () => {
   assert.strictEqual(again.tasks.length, 2);
 });
 
+test('viz:days cuts every day off at its own 24:00', () => {
+  const Model = require('../src/core/model.cjs');
+  const { state, store } = freshState();
+  const pad = (x) => String(x).padStart(2, '0');
+  const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // anchor the week on yesterday; a second seeded day sits in the same
+  // calendar week but is not the anchor (Monday of that week, or Tuesday
+  // when yesterday itself is the Monday)
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const yKey = keyOf(y);
+  const d2 = new Date(y);
+  d2.setDate(d2.getDate() - (d2.getDay() + 6) % 7);
+  if (keyOf(d2) === yKey) d2.setDate(d2.getDate() + 1);
+  const d2Key = keyOf(d2);
+
+  // yesterday (the anchor): work ended 17:00, still open — its overwork
+  // must stop at its own midnight, never run live up to `now`
+  store.updateDay(yKey, (d) => {
+    d.hours = { workStart: '09:00', workEnd: '17:00' };
+  });
+
+  // the second day: one task ran until 01:30 the following morning
+  const pastMidnight = new Date(d2Key + 'T00:00:00').getTime() + (24 * 60 + 90) * 60000;
+  store.updateDay(d2Key, (d) => {
+    d.hours = { workStart: '09:00', workEnd: '17:00' };
+    d.tasks.push({
+      ...Model.newTask('Late sprint', 60),
+      status: 'green', startedAt: 1, finishedAt: pastMidnight, worked: [],
+    });
+  });
+
+  const viz = state.actions['viz:days']({ scope: 'week', anchor: yKey });
+  const byDate = new Map(viz.days.map((d) => [d.date, d]));
+  assert.strictEqual(byDate.get(yKey)?.overworkMin, 7 * 60, 'anchor day stops at its 24:00');
+  assert.strictEqual(byDate.get(d2Key)?.overworkMin, 7 * 60, 'past-midnight finish caps at 24:00');
+});
+
 test('ai modes with endpoint flip the guards', () => {
   const { state } = freshState();
   state.actions['settings:set']({ llm: { baseUrl: 'http://127.0.0.1:9', model: 'x' }, estimatorMode: 'ai' });
