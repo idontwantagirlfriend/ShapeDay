@@ -495,13 +495,15 @@ $('#timeline').addEventListener('mouseleave', (e) => {
 });
 
 // week: click a task block for its details; click a column to open that day
-// month: click a day cell to open that day
+// month: click a day cell for its preview; the hint on its day title opens the chart
 $('#timeline').addEventListener('click', (e) => {
   if (vizScope !== 'week' && vizScope !== 'month') return;
   const hit = Timeline.hitTest($('#timeline'), e.clientX, e.clientY);
   if (hit?.kind === 'task') showWeekTaskBubble(hit, e);
-  else if (hit?.kind === 'day' && hit.date) selectDay(hit.date);
-  else hideVizBubble();
+  else if (hit?.kind === 'day' && hit.date) {
+    if (vizScope === 'month') showMonthBubble(hit, e);
+    else selectDay(hit.date);
+  } else hideVizBubble();
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') hideVizBubble();
@@ -548,6 +550,7 @@ $('#viz-bubble').addEventListener('mouseleave', hideVizBubble);
 
 const COPY_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 4h-1.18A3 3 0 0 0 12 2a3 3 0 0 0-2.82 2H8a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm-4-1a1 1 0 0 1 1 1h-2a1 1 0 0 1 1-1Zm5 16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1v1a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V5h1a1 1 0 0 1 1 1v13Z"/></svg>`;
 const CHECK_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+const CHART_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 20h16v2H4v-2Zm1-2V9h3v9H5Zm5 0V4h3v14h-3Zm5 0v-6h3v6h-3Z"/></svg>`;
 
 /** Clipboard write with a legacy fallback (file:// renderers may not expose the async API). */
 async function copyText(text) {
@@ -614,6 +617,44 @@ function showWeekTaskBubble(hit, e) {
     { el: timeRow, text: timeLine },
     { el: statsRow, text: statsLine },
   ]);
+  bubble.hidden = false;
+  placeBubble(bubble, e);
+}
+
+function taskSubHtml(t) {
+  const start = t.startedAt ? fmtClock(t.startedAt) : '—';
+  const end = t.finishedAt ? fmtClock(t.finishedAt) : '—';
+  return `<span class="dot s-${t.status}"></span>${escapeHtml(t.title)}` +
+    `<span class="sub"><b>${escapeHtml(t.title)}</b><br>${start} → ${end}<br>est ${fmtMin(t.estimateMin)} · worked ${fmtMin(t.elapsedMin)}<br>status: ${t.status}</span>`;
+}
+
+function taskCopyText(t) {
+  const start = t.startedAt ? fmtClock(t.startedAt) : '—';
+  const end = t.finishedAt ? fmtClock(t.finishedAt) : '—';
+  return `${t.title}\n${start} → ${end}\nest ${fmtMin(t.estimateMin)} · worked ${fmtMin(t.elapsedMin)}\nstatus: ${t.status}`;
+}
+
+/** Month cell preview (click). The day title carries the only chart hint —
+ *  task titles never navigate; the hint drills into the workload chart. */
+function showMonthBubble(hit, e) {
+  const bubble = $('#viz-bubble');
+  const day = new Date(hit.date + 'T00:00:00');
+  const title = `${day.toLocaleDateString(INTL_TAG[locale] ?? 'en-US', { month: 'short', day: 'numeric' })} · ${hit.tasks.length} task(s)`;
+  bubble.innerHTML =
+    `<h5 class="has-hint">${escapeHtml(title)}` +
+      `<button type="button" class="bb-open" title="Open workload chart" aria-label="Open workload chart">${CHART_ICON}</button></h5>` +
+    hit.tasks.map((t) => `<div class="taskline">${taskSubHtml(t)}</div>`).join('') +
+    (hit.summary ? `<div class="sumline">${escapeHtml(hit.summary)}</div>` : '');
+  addCopyRows(bubble, [{ el: bubble.querySelector('h5'), text: title }]);
+  bubble.querySelectorAll('.taskline').forEach((row, i) => {
+    addCopyRows(bubble, [{ el: row, text: taskCopyText(hit.tasks[i]) }]);
+  });
+  const sumline = bubble.querySelector('.sumline');
+  if (sumline) addCopyRows(bubble, [{ el: sumline, text: hit.summary }]);
+  bubble.querySelector('.bb-open').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    selectDay(hit.date);
+  });
   bubble.hidden = false;
   placeBubble(bubble, e);
 }

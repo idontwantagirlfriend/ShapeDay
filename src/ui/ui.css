@@ -414,6 +414,25 @@ input[type="range"] { width: 104px; accent-color: var(--accent); }
 }
 .viz-bubble h5 { margin: 0 0 4px; font-size: 0.85rem; }
 .viz-bubble .meta { color: var(--text-dim); font-size: 0.75rem; margin-bottom: 4px; }
+.viz-bubble .taskline {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 2px; cursor: default;
+}
+.viz-bubble .taskline .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.viz-bubble .taskline .sub {
+  display: none;
+  position: absolute; left: calc(100% + 8px); top: -6px;
+  width: 230px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  z-index: 31;
+}
+.viz-bubble .taskline:hover .sub { display: block; }
+.viz-bubble .sumline { color: var(--text-dim); border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
 /* per-row clipboard: hidden until the row itself is hovered (or the button
    is keyboard-focused), so the bubble stays quiet while it is only being read */
 .viz-bubble .copy-row { position: relative; padding-right: 20px; }
@@ -431,6 +450,19 @@ input[type="range"] { width: 104px; accent-color: var(--accent); }
 .viz-bubble .copy-btn:focus-visible { opacity: 1; pointer-events: auto; }
 .viz-bubble .copy-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
 .viz-bubble .copy-btn.copied { color: var(--green); }
+/* month day title: always-on chart hint + room for the hover copy button */
+.viz-bubble .copy-row.has-hint { padding-right: 44px; }
+.viz-bubble .bb-open {
+  position: absolute; right: 22px; top: 50%;
+  transform: translateY(-50%);
+  display: grid; place-items: center;
+  width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 4px;
+  background: transparent; color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.viz-bubble .bb-open:hover { color: var(--accent); background: rgba(174, 216, 252, 0.12); }
 .week-summaries { margin-top: 8px; }
 .week-summaries .cells { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .week-summaries .cell {

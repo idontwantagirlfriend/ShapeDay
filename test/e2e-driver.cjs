@@ -659,27 +659,37 @@ async function run({ app, getMainWin, state, store, windows }) {
       await new Promise((r2) => setTimeout(r2, 120));
       out.dismissed = bubble.hidden;
     } else out.weekHover = 'no-task-hit';
-    // month: hovering a day cell with tasks must stay quiet too
+    // month: hovering a day cell with tasks stays quiet; clicking previews it
     document.querySelector('[data-viz=month]').click();
     await new Promise((r) => setTimeout(r, 700));
     const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.length);
     if (dh) {
       const r = canvas.getBoundingClientRect();
-      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
+      const cx = r.left + dh.x + dh.w / 2, cy = r.top + dh.y + dh.h / 2;
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
       await new Promise((r2) => setTimeout(r2, 150));
       out.monthHover = bubble.hidden;
+      canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: cx, clientY: cy }));
+      await new Promise((r2) => setTimeout(r2, 150));
+      out.monthClick = !bubble.hidden && bubble.querySelectorAll('.taskline').length > 0;
+      out.monthHint = bubble.querySelectorAll('.bb-open').length === 1 && !!bubble.querySelector('h5 .bb-open');
+      out.monthNoTaskHint = bubble.querySelectorAll('.taskline .bb-open').length === 0;
+      out.monthCopies = bubble.querySelectorAll('.taskline .copy-btn').length === bubble.querySelectorAll('.taskline').length;
     } else out.monthHover = 'no-day-hit';
     return out;
   })()`);
   check('week/month previews are click-only, never hover popups',
-    clickProbe.weekHover === true && clickProbe.weekClick === true &&
-      clickProbe.monthHover === true && clickProbe.copies === 4 && clickProbe.copyHidden === true,
+    clickProbe.weekHover === true && clickProbe.weekClick === true && clickProbe.monthHover === true &&
+      clickProbe.monthClick === true && clickProbe.copies === 4 && clickProbe.copyHidden === true,
+    JSON.stringify(clickProbe));
+  check('month preview hints only the day title for entering the chart',
+    clickProbe.monthHint === true && clickProbe.monthNoTaskHint === true && clickProbe.monthCopies === true,
     JSON.stringify(clickProbe));
   check('clicked preview anchors, copies, and dismisses on leaving it',
     clickProbe.anchored === true && clickProbe.dismissed === true, JSON.stringify(clickProbe));
   const repMonth = await call('report:get', { scope: 'month' });
   const repYear = await call('report:get', { scope: 'year' });
-  // day selection: click a month cell → Day chart of that date, chip to return
+  // month preview: click opens the bubble; the day-title hint enters the chart
   const dayPick = await win.webContents.executeJavaScript(`(async () => {
     const canvas = document.getElementById('timeline');
     document.querySelector('[data-viz=month]').click();
@@ -689,21 +699,22 @@ async function run({ app, getMainWin, state, store, windows }) {
     if (!dh) return { ok: false, why: 'no non-today day hit' };
     const r = canvas.getBoundingClientRect();
     canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
+    await new Promise((r2) => setTimeout(r2, 200));
+    const bubble = document.getElementById('viz-bubble');
+    const previewed = !bubble.hidden;
+    const hint = bubble.querySelector('h5 .bb-open');
+    if (!hint) return { ok: false, why: 'no chart hint' };
+    hint.click();
     await new Promise((r2) => setTimeout(r2, 900));
-    // past-day clamp: the chart's rightmost label never runs past that day
-    const rightLabel = (() => {
-      const labels = (canvas._hits === null, true); // placeholder, real check below
-      return true;
-    })();
     const chartH = canvas.getBoundingClientRect().height;
     const chip = document.getElementById('day-pick');
     const chipShown = chip && !chip.hidden && chip.textContent.trim().length > 3;
-    const dbg = { chipShown, txt: chip ? chip.textContent : 'gone', hid: chip ? chip.hidden : 'gone' };
+    const dbg = { previewed, chipShown, txt: chip ? chip.textContent : 'gone', hid: chip ? chip.hidden : 'gone' };
     chip.click(); // back to today
     await new Promise((r2) => setTimeout(r2, 600));
-    return { ok: chipShown && chip.hidden && chartH <= 310, why: JSON.stringify({ ...dbg, chartH }) };
+    return { ok: previewed && chipShown && chip.hidden && chartH <= 310 && bubble.hidden, why: JSON.stringify({ ...dbg, chartH }) };
   })()`);
-  check('clicking a month day opens its workload chart', dayPick.ok === true, JSON.stringify(dayPick));
+  check('month preview day-title hint opens the workload chart', dayPick.ok === true, JSON.stringify(dayPick));
 
   // the summary strip stays hover-quiet too: hovering a cell never pops the
   // bubble over the grid; the click below still opens the day
