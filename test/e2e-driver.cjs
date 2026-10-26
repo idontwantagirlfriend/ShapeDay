@@ -624,8 +624,9 @@ async function run({ app, getMainWin, state, store, windows }) {
   })()`);
   check('canvas pixels unchanged by mouseleave in week/month', edgeFlicker === true);
 
-  // hover-to-display: synthetic mousemove over real hits must open the bubbles
-  const hoverProbe = await win.webContents.executeJavaScript(`(async () => {
+  // click-only previews: hovering the grids must never pop a bubble over the
+  // cells being aimed at; clicking a week task block opens its details.
+  const clickProbe = await win.webContents.executeJavaScript(`(async () => {
     const canvas = document.getElementById('timeline');
     const bubble = document.getElementById('viz-bubble');
     const out = {};
@@ -637,45 +638,45 @@ async function run({ app, getMainWin, state, store, windows }) {
     });
     document.querySelector('[data-viz=week]').click();
     await new Promise((r) => setTimeout(r, 700));
-    const all = (canvas._hits || []).filter((h) => h.kind === 'task');
-    const wh = all[0];
+    const wh = (canvas._hits || []).find((h) => h.kind === 'task');
     if (wh) {
       const r = canvas.getBoundingClientRect();
       const cx = r.left + wh.x + wh.w / 2, cy = r.top + wh.y + Math.min(wh.h / 2, 8);
       canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
-      await new Promise((r2) => setTimeout(r2, 120));
-      out.week = !bubble.hidden && bubble.textContent.length > 0;
+      await new Promise((r2) => setTimeout(r2, 150));
+      out.weekHover = bubble.hidden; // hover alone must not open it
+      canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: cx, clientY: cy }));
+      await new Promise((r2) => setTimeout(r2, 150));
+      out.weekClick = !bubble.hidden && bubble.textContent.length > 0;
       const anchorPos = bubble.style.left + '|' + bubble.style.top;
-      out.weekCopies = bubble.querySelectorAll('.copy-btn').length;
-      out.weekHidden = [...bubble.querySelectorAll('.copy-btn')].every((b) => getComputedStyle(b).opacity === '0');
-      // nudge within the same block: the bubble must persist and stay anchored
-      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 6, clientY: cy + 3 }));
+      out.copies = bubble.querySelectorAll('.copy-btn').length;
+      out.copyHidden = [...bubble.querySelectorAll('.copy-btn')].every((b) => getComputedStyle(b).opacity === '0');
+      // moving on the chart must not move it; leaving the bubble dismisses
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 8, clientY: cy + 4 }));
+      await new Promise((r2) => setTimeout(r2, 150));
+      out.anchored = !bubble.hidden && bubble.style.left + '|' + bubble.style.top === anchorPos;
+      bubble.dispatchEvent(new MouseEvent('mouseleave'));
       await new Promise((r2) => setTimeout(r2, 120));
-      out.persist = !bubble.hidden && bubble.textContent.length > 0;
-      out.anchored = anchorPos !== '|' && bubble.style.left + '|' + bubble.style.top === anchorPos;
-    } else out.week = 'no-task-hit';
-    // month: center of a day cell with tasks
+      out.dismissed = bubble.hidden;
+    } else out.weekHover = 'no-task-hit';
+    // month: hovering a day cell with tasks must stay quiet too
     document.querySelector('[data-viz=month]').click();
     await new Promise((r) => setTimeout(r, 700));
     const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.length);
     if (dh) {
       const r = canvas.getBoundingClientRect();
-      const cx = r.left + dh.x + dh.w / 2, cy = r.top + dh.y + dh.h / 2;
-      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
-      await new Promise((r2) => setTimeout(r2, 120));
-      out.month = !bubble.hidden && bubble.querySelectorAll('.taskline').length > 0;
-      out.cascaded = bubble.querySelectorAll('.taskline .sub').length > 0;
-      out.monthCopies = bubble.querySelectorAll('.taskline .copy-btn').length;
-      out.monthCopiesMatch = out.monthCopies === bubble.querySelectorAll('.taskline').length;
-    } else out.month = 'no-day-hit';
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
+      await new Promise((r2) => setTimeout(r2, 150));
+      out.monthHover = bubble.hidden;
+    } else out.monthHover = 'no-day-hit';
     return out;
   })()`);
-  check('week hover previews without clicking, anchored and copyable',
-    hoverProbe.week === true && hoverProbe.persist === true && hoverProbe.anchored === true &&
-      hoverProbe.weekCopies === 2 && hoverProbe.weekHidden === true, JSON.stringify(hoverProbe));
-  check('month hover opens the task list with cascaded detail',
-    hoverProbe.month === true && hoverProbe.cascaded === true && hoverProbe.monthCopiesMatch === true,
-    JSON.stringify(hoverProbe));
+  check('week/month previews are click-only, never hover popups',
+    clickProbe.weekHover === true && clickProbe.weekClick === true &&
+      clickProbe.monthHover === true && clickProbe.copies === 4 && clickProbe.copyHidden === true,
+    JSON.stringify(clickProbe));
+  check('clicked preview anchors, copies, and dismisses on leaving it',
+    clickProbe.anchored === true && clickProbe.dismissed === true, JSON.stringify(clickProbe));
   const repMonth = await call('report:get', { scope: 'month' });
   const repYear = await call('report:get', { scope: 'year' });
   // day selection: click a month cell → Day chart of that date, chip to return
@@ -704,33 +705,22 @@ async function run({ app, getMainWin, state, store, windows }) {
   })()`);
   check('clicking a month day opens its workload chart', dayPick.ok === true, JSON.stringify(dayPick));
 
-  // summary cells preview through the shared bubble, extending upward
-  const cellPrev = await win.webContents.executeJavaScript(`(async () => {
+  // the summary strip stays hover-quiet too: hovering a cell never pops the
+  // bubble over the grid; the click below still opens the day
+  const cellHover = await win.webContents.executeJavaScript(`(async () => {
     document.querySelector('[data-viz=week]').click();
     await new Promise((r) => setTimeout(r, 700));
+    const bubble = document.getElementById('viz-bubble');
     const cell = document.querySelector('#week-summaries .cell:not(.empty)');
     if (!cell) return { ok: false, why: 'no filled cell' };
     cell.dispatchEvent(new MouseEvent('mouseenter'));
     await new Promise((r) => setTimeout(r, 150));
-    const bubble = document.getElementById('viz-bubble');
-    const shown = !bubble.hidden && bubble.textContent.length > 0;
-    // re-query: the 1 Hz render may have rebuilt the cells since capture
-    const liveCell = document.querySelector('#week-summaries .cell:not(.empty)') || cell;
-    const cellR = liveCell.getBoundingClientRect();
-    const bR = bubble.getBoundingClientRect();
-    const upward = bR.bottom <= cellR.top + 4; // preview sits above the cell
-    const wrapR2 = document.querySelector('.viz-wrap').getBoundingClientRect();
-    window.__pv = {
-      cellTop: cellR.top, bTop: bR.top, bH: bR.height,
-      wrapTop: wrapR2.top, styleTop: bubble.style.top, styleLeft: bubble.style.left,
-      scrollTop: document.getElementById('view-viz').scrollTop,
-      cellOffsetInWrap: cellR.top - wrapR2.top,
-    };
+    const quiet = bubble.hidden;
     cell.dispatchEvent(new MouseEvent('mouseleave'));
     await new Promise((r) => setTimeout(r, 120));
-    return { ok: shown && upward && bubble.hidden, why: 'shown=' + shown + ' up=' + upward };
+    return { ok: quiet && bubble.hidden, why: 'quiet=' + quiet };
   })()`);
-  check('summary cells preview upward via the shared bubble', cellPrev.ok === true, JSON.stringify(cellPrev));
+  check('summary cells stay hover-quiet (no bubble over the grid)', cellHover.ok === true, JSON.stringify(cellHover));
 
   // summary cells open their day's chart too
   const cellDay = await win.webContents.executeJavaScript(`(async () => {
@@ -747,41 +737,6 @@ async function run({ app, getMainWin, state, store, windows }) {
     return { ok: date !== today ? chipShown === true : true, why: 'date=' + date };
   })()`);
   check('summary cell opens its day chart', cellDay.ok === true, JSON.stringify(cellDay));
-
-  // month bubble carries the mini burn-up canvas between list and summary
-  const miniOk = await win.webContents.executeJavaScript(`(async () => {
-    const canvas = document.getElementById('timeline');
-    document.querySelector('[data-viz=month]').click();
-    await new Promise((r) => setTimeout(r, 700));
-    const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.some((t) => (t.worked || []).length));
-    if (!dh) return { ok: false, why: 'no day with worked time' };
-    const r = canvas.getBoundingClientRect();
-    canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
-    await new Promise((r2) => setTimeout(r2, 200));
-    const mini = document.querySelector('#viz-bubble .mini-day');
-    return { ok: !!mini && mini.width > 0, why: mini ? 'canvas present' : 'missing' };
-  })()`);
-  check('month hover bubble shows the mini day chart', miniOk.ok === true, JSON.stringify(miniOk));
-
-  // the mini chart lives inside the bubble only — nothing trails the canvas
-  const leak = await win.webContents.executeJavaScript(`(async () => {
-    const canvas = document.getElementById('timeline');
-    const dh = (canvas._hits || []).find((h) => h.kind === 'day' && h.tasks.length);
-    if (dh) {
-      const r = canvas.getBoundingClientRect();
-      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2, clientY: r.top + dh.y + dh.h / 2 }));
-      await new Promise((r2) => setTimeout(r2, 150));
-      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + dh.x + dh.w / 2 + 10, clientY: r.top + dh.y + dh.h / 2 }));
-      await new Promise((r2) => setTimeout(r2, 150));
-    }
-    document.querySelector('[data-viz=day]').click();
-    document.querySelector('[data-viz=week]').click();
-    await new Promise((r) => setTimeout(r, 400));
-    const strays = document.querySelectorAll('.viz-wrap > .mini-day, main .mini-day:not(#viz-bubble .mini-day)').length;
-    const inside = document.querySelectorAll('#viz-bubble .mini-day').length <= 1;
-    return { ok: strays === 0 && inside, why: 'strays=' + strays };
-  })()`);
-  check('mini charts stay inside the bubble, no strays across views', leak.ok === true, JSON.stringify(leak));
 
   // frozen hours: a past day's bounds survive a global work-end change. The
   // freeze only applies to days that actually lived under their hours, so a
