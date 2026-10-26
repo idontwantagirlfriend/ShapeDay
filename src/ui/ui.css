@@ -434,6 +434,23 @@ input[type="range"] { width: 104px; accent-color: var(--accent); }
 }
 .viz-bubble .taskline:hover .sub { display: block; }
 .viz-bubble .sumline { color: var(--text-dim); border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+/* per-row clipboard: hidden until the row itself is hovered (or the button
+   is keyboard-focused), so the bubble stays quiet while it is only being read */
+.viz-bubble .copy-row { position: relative; padding-right: 20px; }
+.viz-bubble .copy-btn {
+  position: absolute; right: 0; top: 50%;
+  transform: translateY(-50%);
+  display: grid; place-items: center;
+  width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 4px;
+  background: transparent; color: var(--text-dim);
+  opacity: 0; pointer-events: none; cursor: pointer;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.viz-bubble .copy-row:hover > .copy-btn,
+.viz-bubble .copy-btn:focus-visible { opacity: 1; pointer-events: auto; }
+.viz-bubble .copy-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+.viz-bubble .copy-btn.copied { color: var(--green); }
 .week-summaries { margin-top: 8px; }
 .week-summaries .cells { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .week-summaries .cell {

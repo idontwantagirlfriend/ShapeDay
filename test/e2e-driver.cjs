@@ -9,7 +9,7 @@ const fs = require('fs');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function run({ app, getMainWin, state, windows }) {
+async function run({ app, getMainWin, state, store, windows }) {
   const results = [];
   const check = (name, ok, detail) => {
     results.push({ name, ok: !!ok, detail: detail ?? '' });
@@ -645,10 +645,14 @@ async function run({ app, getMainWin, state, windows }) {
       canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
       await new Promise((r2) => setTimeout(r2, 120));
       out.week = !bubble.hidden && bubble.textContent.length > 0;
-      // nudge within the same block: the bubble must persist, not flicker away
+      const anchorPos = bubble.style.left + '|' + bubble.style.top;
+      out.weekCopies = bubble.querySelectorAll('.copy-btn').length;
+      out.weekHidden = [...bubble.querySelectorAll('.copy-btn')].every((b) => getComputedStyle(b).opacity === '0');
+      // nudge within the same block: the bubble must persist and stay anchored
       canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 6, clientY: cy + 3 }));
       await new Promise((r2) => setTimeout(r2, 120));
       out.persist = !bubble.hidden && bubble.textContent.length > 0;
+      out.anchored = anchorPos !== '|' && bubble.style.left + '|' + bubble.style.top === anchorPos;
     } else out.week = 'no-task-hit';
     // month: center of a day cell with tasks
     document.querySelector('[data-viz=month]').click();
@@ -661,13 +665,17 @@ async function run({ app, getMainWin, state, windows }) {
       await new Promise((r2) => setTimeout(r2, 120));
       out.month = !bubble.hidden && bubble.querySelectorAll('.taskline').length > 0;
       out.cascaded = bubble.querySelectorAll('.taskline .sub').length > 0;
+      out.monthCopies = bubble.querySelectorAll('.taskline .copy-btn').length;
+      out.monthCopiesMatch = out.monthCopies === bubble.querySelectorAll('.taskline').length;
     } else out.month = 'no-day-hit';
     return out;
   })()`);
-  check('week hover previews without clicking, surviving cursor nudges',
-    hoverProbe.week === true && hoverProbe.persist === true, JSON.stringify(hoverProbe));
+  check('week hover previews without clicking, anchored and copyable',
+    hoverProbe.week === true && hoverProbe.persist === true && hoverProbe.anchored === true &&
+      hoverProbe.weekCopies === 2 && hoverProbe.weekHidden === true, JSON.stringify(hoverProbe));
   check('month hover opens the task list with cascaded detail',
-    hoverProbe.month === true && hoverProbe.cascaded === true, JSON.stringify(hoverProbe));
+    hoverProbe.month === true && hoverProbe.cascaded === true && hoverProbe.monthCopiesMatch === true,
+    JSON.stringify(hoverProbe));
   const repMonth = await call('report:get', { scope: 'month' });
   const repYear = await call('report:get', { scope: 'year' });
   // day selection: click a month cell → Day chart of that date, chip to return
@@ -775,7 +783,18 @@ async function run({ app, getMainWin, state, windows }) {
   })()`);
   check('mini charts stay inside the bubble, no strays across views', leak.ok === true, JSON.stringify(leak));
 
-  // frozen hours: a past day's bounds survive a global work-end change
+  // frozen hours: a past day's bounds survive a global work-end change. The
+  // freeze only applies to days that actually lived under their hours, so a
+  // fresh profile needs yesterday's record seeded first.
+  {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const p = (x) => String(x).padStart(2, '0');
+    const yKey = `${y.getFullYear()}-${p(y.getMonth() + 1)}-${p(y.getDate())}`;
+    const own = { workStart: store.settings.workStart, workEnd: store.settings.workEnd };
+    store.updateDay(yKey, (d) => { d.hours = d.hours || own; });
+    store.flush();
+  }
   const frozen = await win.webContents.executeJavaScript(`(async () => {
     const today = (await shapeday.call('day:get')).date;
     const y = new Date(today + 'T00:00:00'); y.setDate(y.getDate() - 1);

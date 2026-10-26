@@ -155,27 +155,32 @@ function overlayEnabled() {
 let lastBarStyle = null;
 
 function syncOverlay(snap) {
+  // windows can be gone while the 1 Hz pump is still ticking (app quit,
+  // app.exit() in the e2e harness): a stale reference must be a no-op, never
+  // an "Object has been destroyed" throw
+  const bar = barWin && !barWin.isDestroyed() ? barWin : null;
+  const tint = tintWin && !tintWin.isDestroyed() ? tintWin : null;
   if (!overlayEnabled() || !snap) {
-    barWin?.hide();
-    tintWin?.hide();
+    bar?.hide();
+    tint?.hide();
     return; // note: the break toast stays — it's functional, not decoration
   }
-  if (barWin) {
+  if (bar) {
     const style = snap.settings.overlayStyle === 'floater' ? 'floater' : 'top';
     if (style !== lastBarStyle) {
       lastBarStyle = style;
-      windows.applyBarStyle(barWin, style);
+      windows.applyBarStyle(bar, style);
     }
     const inDay = snap.day && (snap.day.tasks.length > 0);
-    if (inDay || snap.active) barWin.showInactive();
-    else barWin.hide();
+    if (inDay || snap.active) bar.showInactive();
+    else bar.hide();
   }
-  if (tintWin) {
+  if (tint) {
     if (snap.overworkMin > 0 && (snap.settings.tintStrength ?? 100) > 0) {
-      if (!tintWin.isVisible()) tintWin.showInactive();
-      tintWin.moveTop();
+      if (!tint.isVisible()) tint.showInactive();
+      tint.moveTop();
     } else {
-      tintWin.hide();
+      tint.hide();
     }
   }
 }
@@ -186,16 +191,16 @@ function pump() {
   for (const ev of events) {
     windows.sendToAll('shapeday:event', ev);
     if (ev.type === 'break-propose') {
-      if (toastWin) {
+      if (toastWin && !toastWin.isDestroyed()) {
         toastWin.showInactive();
         toastWin.moveTop();
       }
     }
     if (ev.type === 'break-over' || ev.type === 'break-skipped') {
-      if (toastWin) toastWin.hide();
+      if (toastWin && !toastWin.isDestroyed()) toastWin.hide();
     }
     if (ev.type === 'eval-prompt') {
-      if (evalWin) {
+      if (evalWin && !evalWin.isDestroyed()) {
         // re-anchor to the bottom-right each time (display layout may change)
         const { workArea } = require('electron').screen.getPrimaryDisplay();
         const [W, H] = evalWin.getSize();
@@ -206,9 +211,11 @@ function pump() {
     }
   }
   syncOverlay(snap);
-  tray?.setToolTip(
-    snap.active ? `▶ ${snap.active.title}` : `ShapeDay — ${Math.round(snap.progress.ratio * 100)}%`
-  );
+  if (tray && !tray.isDestroyed()) {
+    tray.setToolTip(
+      snap.active ? `▶ ${snap.active.title}` : `ShapeDay — ${Math.round(snap.progress.ratio * 100)}%`
+    );
+  }
 }
 
 // ---------- standardized IPC: one channel, kind-dispatched ----------
@@ -396,7 +403,7 @@ if (!gotLock) {
     // Headless-ish end-to-end harness: SHAPEDAY_E2E=1 electron . --no-sandbox
     if (process.env.SHAPEDAY_E2E) {
       const { run } = require('../../test/e2e-driver.cjs');
-      setTimeout(() => run({ app, getMainWin: () => mainWin, state, windows }).catch((e) => {
+      setTimeout(() => run({ app, getMainWin: () => mainWin, state, store, windows }).catch((e) => {
         console.error('e2e driver crashed:', e);
         app.exit(1);
       }), 800);

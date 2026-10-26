@@ -477,30 +477,32 @@ $$('.viz-scopes button[data-viz]').forEach((b) =>
 );
 
 // day: crosshair hover. month: day-cell hover bubble. week: task-block preview.
+// Week/month previews anchor where they were triggered — they never follow the
+// cursor — so their rows stay still to select and copy; the bubble survives the
+// trip from the chart onto itself and dismisses when the cursor leaves it.
 $('#timeline').addEventListener('mousemove', (e) => {
   const canvas = $('#timeline');
   if (vizScope === 'day') {
     Timeline.hover(canvas, e.clientX, e.clientY);
-  } else if (vizScope === 'month') {
-    const hit = Timeline.hitTest(canvas, e.clientX, e.clientY);
-    if (hit?.kind === 'day' && (hit.tasks.length || hit.summary)) {
-      showMonthBubble(hit, e);
-    } else {
-      hideVizBubble();
-    }
-  } else if (vizScope === 'week') {
-    // hover-to-preview on any task block; no click needed
-    const hit = Timeline.hitTest(canvas, e.clientX, e.clientY);
-    if (hit?.kind === 'task') {
-      showWeekPreview(hit, e);
-    } else {
-      hideVizBubble();
-    }
+    return;
+  }
+  if (!$('#viz-bubble').hidden) { // anchored: waiting for the cursor
+    clearBubbleHide(); // back on the chart: cancel any pending dismiss
+    return;
+  }
+  const hit = Timeline.hitTest(canvas, e.clientX, e.clientY);
+  if (vizScope === 'month') {
+    if (hit?.kind === 'day' && (hit.tasks.length || hit.summary)) showMonthBubble(hit, e);
+  } else if (hit?.kind === 'task') {
+    showWeekPreview(hit, e); // hover-to-preview on any task block; no click needed
   }
 });
-$('#timeline').addEventListener('mouseleave', () => {
+$('#timeline').addEventListener('mouseleave', (e) => {
   Timeline.hoverEnd();
-  if (vizScope !== 'day') hideVizBubble();
+  if (vizScope === 'day') return;
+  // crossing the canvas edge on the way to the bubble must not dismiss it
+  if (e.relatedTarget && $('#viz-bubble').contains(e.relatedTarget)) return;
+  scheduleBubbleHide();
 });
 
 // week: click a task block for its details; click a column to open that day
@@ -519,6 +521,21 @@ document.addEventListener('keydown', (e) => {
 // ---------- viz bubbles ----------
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => () => T('dow.' + [1, 2, 3, 4, 5, 6, 0][i]));
 
+// Preview bubbles are copyable, so they never follow the cursor. Leaving the
+// chart only arms a short grace timer — entering the bubble itself cancels it,
+// which lets the cursor cross the gap between the trigger and the bubble.
+let bubbleHideTimer = null;
+function clearBubbleHide() {
+  if (bubbleHideTimer) {
+    clearTimeout(bubbleHideTimer);
+    bubbleHideTimer = null;
+  }
+}
+function scheduleBubbleHide() {
+  clearBubbleHide();
+  bubbleHideTimer = setTimeout(hideVizBubble, 140);
+}
+
 function placeBubble(bubble, e) {
   const wrap = document.querySelector('.viz-wrap');
   const r = wrap.getBoundingClientRect();
@@ -531,7 +548,63 @@ function placeBubble(bubble, e) {
 }
 
 function hideVizBubble() {
+  clearBubbleHide();
   $('#viz-bubble').hidden = true;
+}
+
+// the bubble is a hover target in its own right: enter to keep it (and copy),
+// leave and it goes away
+$('#viz-bubble').addEventListener('mouseenter', clearBubbleHide);
+$('#viz-bubble').addEventListener('mouseleave', hideVizBubble);
+
+const COPY_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 4h-1.18A3 3 0 0 0 12 2a3 3 0 0 0-2.82 2H8a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm-4-1a1 1 0 0 1 1 1h-2a1 1 0 0 1 1-1Zm5 16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1v1a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V5h1a1 1 0 0 1 1 1v13Z"/></svg>`;
+const CHECK_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+
+/** Clipboard write with a legacy fallback (file:// renderers may not expose the async API). */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed; left:-9999px; top:0; opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } finally {
+      ta.remove();
+    }
+    return ok;
+  }
+}
+
+/** Attach a hover-only clipboard affordance to each copyable bubble row. */
+function addCopyRows(bubble, rows) {
+  for (const { el, text } of rows) {
+    if (!el || !text) continue;
+    el.classList.add('copy-row');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.title = 'Copy';
+    btn.setAttribute('aria-label', 'Copy');
+    btn.innerHTML = COPY_ICON;
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (!(await copyText(text))) return;
+      btn.innerHTML = CHECK_ICON;
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.innerHTML = COPY_ICON;
+        btn.classList.remove('copied');
+      }, 900);
+    });
+    el.appendChild(btn);
+  }
 }
 
 function taskSubHtml(t) {
@@ -546,9 +619,14 @@ function showWeekPreview(hit, e) {
   const bubble = $('#viz-bubble');
   const start = hit.startedAt ? fmtClock(hit.startedAt) : '—';
   const end = hit.finishedAt ? fmtClock(hit.finishedAt) : 'running';
+  const dateLine = `${hit.date} · ${start} → ${end}`;
   bubble.innerHTML =
     `<h5>${escapeHtml(hit.title)}</h5>` +
-    `<div class="meta">${hit.date} · ${start} → ${end}</div>`;
+    `<div class="meta">${escapeHtml(dateLine)}</div>`;
+  addCopyRows(bubble, [
+    { el: bubble.querySelector('h5'), text: hit.title },
+    { el: bubble.querySelector('.meta'), text: dateLine },
+  ]);
   bubble.hidden = false;
   placeBubble(bubble, e);
 }
@@ -557,11 +635,20 @@ function showWeekTaskBubble(hit, e) {
   const bubble = $('#viz-bubble');
   const start = hit.startedAt ? fmtClock(hit.startedAt) : '—';
   const end = hit.finishedAt ? fmtClock(hit.finishedAt) : 'running';
+  const timeLine = `${start} → ${end}`;
+  const statsLine = `est ${fmtMin(hit.estimateMin)} · worked ${fmtMin(hit.elapsedMin)} · ${hit.status}`;
   bubble.innerHTML =
     `<h5>${escapeHtml(hit.title)}</h5>` +
-    `<div class="meta">${hit.date}</div>` +
-    `<div>${start} → ${end}</div>` +
-    `<div class="meta">est ${fmtMin(hit.estimateMin)} · worked ${fmtMin(hit.elapsedMin)} · ${hit.status}</div>`;
+    `<div class="meta">${escapeHtml(hit.date)}</div>` +
+    `<div>${timeLine}</div>` +
+    `<div class="meta">${escapeHtml(statsLine)}</div>`;
+  const [titleRow, dateRow, timeRow, statsRow] = bubble.children;
+  addCopyRows(bubble, [
+    { el: titleRow, text: hit.title },
+    { el: dateRow, text: hit.date },
+    { el: timeRow, text: timeLine },
+    { el: statsRow, text: statsLine },
+  ]);
   bubble.hidden = false;
   placeBubble(bubble, e);
 }
@@ -617,17 +704,32 @@ function miniDayCanvas(hit) {
   return cv;
 }
 
+function taskCopyText(t) {
+  const start = t.startedAt ? fmtClock(t.startedAt) : '—';
+  const end = t.finishedAt ? fmtClock(t.finishedAt) : '—';
+  return `${t.title}\n${start} → ${end}\nest ${fmtMin(t.estimateMin)} · worked ${fmtMin(t.elapsedMin)}\nstatus: ${t.status}`;
+}
+
 function showMonthBubble(hit, e) {
   const bubble = $('#viz-bubble');
-  const rows = hit.tasks
-    .map((t) => `<div class="taskline">${taskSubHtml(t)}</div>`)
-    .join('');
-  const sum = hit.summary ? `<div class="sumline">${escapeHtml(hit.summary)}</div>` : '';
+  const heading = `${Number(hit.date.slice(8))} · ${hit.tasks.length} task(s)`;
   bubble.innerHTML =
-    `<h5>${Number(hit.date.slice(8))} · ${hit.tasks.length} task(s)</h5>` + rows;
+    `<h5>${heading}</h5>` +
+    hit.tasks.map((t) => `<div class="taskline">${taskSubHtml(t)}</div>`).join('');
+  const copies = [{ el: bubble.querySelector('h5'), text: heading }];
+  bubble.querySelectorAll('.taskline').forEach((row, i) => {
+    copies.push({ el: row, text: taskCopyText(hit.tasks[i]) });
+  });
+  addCopyRows(bubble, copies);
   const mini = miniDayCanvas(hit);
   if (mini) bubble.appendChild(mini); // inside the bubble, always
-  if (sum) bubble.insertAdjacentHTML('beforeend', sum);
+  if (hit.summary) {
+    const sum = document.createElement('div');
+    sum.className = 'sumline';
+    sum.textContent = hit.summary;
+    bubble.appendChild(sum);
+    addCopyRows(bubble, [{ el: sum, text: hit.summary }]);
+  }
   bubble.hidden = false;
   placeBubble(bubble, e);
 }
