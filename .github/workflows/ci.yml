@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main, master]
+  pull_request:
+    branches: [dev, main, master]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      sign:
+        description: Sign release builds when credentials are available
+        type: boolean
+        default: false
+    secrets:
+      CSC_LINK:
+        required: false
+      CSC_KEY_PASSWORD:
+        required: false
+      MAC_CSC_LINK:
+        required: false
+      MAC_CSC_KEY_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Test and build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            script: dist:win
+          - platform: macos
+            os: macos-latest
+            script: dist:mac
+          - platform: linux
+            os: ubuntu-latest
+            script: dist:linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Install virtual display
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: End-to-end UI tests
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" npm run test:e2e
+      - name: Build installers
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.sign && 'true' || 'false' }}
+          CSC_LINK: ${{ inputs.sign && ((runner.os == 'Windows' && secrets.CSC_LINK) || (runner.os == 'macOS' && secrets.MAC_CSC_LINK)) || '' }}
+          CSC_KEY_PASSWORD: ${{ inputs.sign && ((runner.os == 'Windows' && secrets.CSC_KEY_PASSWORD) || (runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD)) || '' }}
+          APPLE_ID: ${{ inputs.sign && runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign && runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.sign && runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          # An empty certificate link is not the same as an absent one.
+          if [ -z "$CSC_LINK" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_SPECIFIC_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          npm run ${{ matrix.script }} -- --publish never
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: shapeday-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/ShapeDay-Setup-*.exe
+            dist/ShapeDay-Portable-*.exe
+            dist/ShapeDay-*.dmg
+            dist/ShapeDay-*.zip
+            dist/ShapeDay-*.AppImage
+            dist/*.blockmap
+            dist/latest*.yml

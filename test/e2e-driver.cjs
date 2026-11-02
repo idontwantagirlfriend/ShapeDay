@@ -254,12 +254,21 @@ async function run({ app, getMainWin, state, store, windows }) {
   check('reflog records added / status / deleted',
     log.some((e) => e.kind === 'added') && log.some((e) => e.kind === 'status') && log.some((e) => e.kind === 'deleted'));
 
-  // 8. overwork clock: shove work-end into the past
-  const past = new Date(Date.now() - 60 * 60000);
-  const pad = (n) => String(n).padStart(2, '0');
-  await call('settings:set', { workEnd: `${pad(past.getHours())}:${pad(past.getMinutes())}` });
+  // 8. overwork clock: use the state's explicit clock to avoid midnight
+  // wraparound and dependence on the CI runner's local time or saved hours.
   snap = await call('day:get');
-  check('overwork clock running past hours end', snap.overworkMin >= 55, `${snap.overworkMin}m`);
+  const savedHours = { workStart: snap.settings.workStart, workEnd: snap.settings.workEnd };
+  try {
+    await call('settings:set', { workStart: '09:00', workEnd: '17:00' });
+    const scheduled = await call('day:get');
+    const atEnd = state.snapshot(scheduled.bounds.end);
+    const afterEnd = state.snapshot(scheduled.bounds.end + 60 * 60000);
+    check('overwork clock running past hours end',
+      atEnd.overworkMin === 0 && afterEnd.overworkMin === 60, `${afterEnd.overworkMin}m`);
+  } finally {
+    await call('settings:set', savedHours);
+  }
+  snap = await call('day:get');
 
   // 9. report — metrics + templated headline (default template mode)
   const rep = await call('report:get', { scope: 'day' });
