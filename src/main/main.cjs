@@ -156,6 +156,9 @@ function trayIcon() {
 /** macOS has an application-wide menu bar; roles keep the standard shortcuts
  *  (Cmd+C/V, Cmd+Q, window management) working while the window itself has no
  *  in-window menu. Windows/Linux remove the window menu instead. */
+let overlayMenuItem = null;
+let trayOverlayMenuItem = null;
+
 function installAppMenu() {
   if (process.platform !== 'darwin') return;
   Menu.setApplicationMenu(
@@ -165,23 +168,52 @@ function installAppMenu() {
       {
         label: 'View',
         submenu: [
-          { label: 'Show ShapeDay', click: () => showMain() },
+          { label: 'Show ShapeDay', accelerator: 'Command+0', click: () => showMain() },
           {
-            label: 'Toggle Overlay',
-            click: () => {
-              store.setSettings({ overlayEnabled: !overlayEnabled() });
-              pump();
-            },
+            id: 'overlay-toggle',
+            label: 'Overlay',
+            type: 'checkbox',
+            checked: overlayEnabled(),
+            click: (item) => setOverlayEnabled(item.checked),
           },
         ],
       },
       { role: 'windowMenu' },
     ])
   );
+  overlayMenuItem = Menu.getApplicationMenu().getMenuItemById('overlay-toggle');
+}
+
+/** Dock right-click menu: the same two actions, reachable without opening
+ *  the main window. */
+function installDockMenu() {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  app.dock.setMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show ShapeDay', click: () => showMain() },
+      { label: 'Toggle Overlay', click: () => toggleOverlay() },
+    ])
+  );
 }
 
 function overlayEnabled() {
   return store.settings.overlayEnabled !== false;
+}
+
+function syncOverlayMenuItems() {
+  const on = overlayEnabled();
+  if (overlayMenuItem) overlayMenuItem.checked = on;
+  if (trayOverlayMenuItem) trayOverlayMenuItem.checked = on;
+}
+
+function setOverlayEnabled(on) {
+  store.setSettings({ overlayEnabled: !!on });
+  syncOverlayMenuItems();
+  pump();
+}
+
+function toggleOverlay() {
+  setOverlayEnabled(!overlayEnabled());
 }
 
 /** Show/hide overlay windows from the current snapshot. */
@@ -244,6 +276,7 @@ function pump() {
     }
   }
   syncOverlay(snap);
+  syncOverlayMenuItems(); // the UI can change the setting too
   if (tray && !tray.isDestroyed()) {
     tray.setToolTip(
       snap.active ? `▶ ${snap.active.title}` : `ShapeDay — ${Math.round(snap.progress.ratio * 100)}%`
@@ -391,6 +424,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     installAppMenu();
+    installDockMenu();
     mainWin = windows.createMainWindow();
     // closing hides to tray: the window object survives, so tray-restore is
     // instant and nothing ever calls show() on a destroyed window
@@ -407,31 +441,26 @@ if (!gotLock) {
     toastWin = windows.createToast();
 
     tray = new Tray(trayIcon());
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: 'Show ShapeDay', click: () => showMain() },
-        {
-          label: 'Overlay on/off',
-          type: 'checkbox',
-          checked: overlayEnabled(),
-          click: (item) => {
-            store.setSettings({ overlayEnabled: item.checked });
-            pump();
-          },
-        },
-        { type: 'separator' },
-        { label: 'Quit', click: () => app.quit() },
-      ])
-    );
+    const trayMenu = Menu.buildFromTemplate([
+      { label: 'Show ShapeDay', click: () => showMain() },
+      {
+        id: 'tray-overlay-toggle',
+        label: 'Overlay on/off',
+        type: 'checkbox',
+        checked: overlayEnabled(),
+        click: (item) => setOverlayEnabled(item.checked),
+      },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ]);
+    tray.setContextMenu(trayMenu);
+    trayOverlayMenuItem = trayMenu.getMenuItemById('tray-overlay-toggle');
     tray.setToolTip('ShapeDay');
     // On macOS the tray context menu opens on click; elsewhere click restores.
     if (process.platform !== 'darwin') tray.on('click', () => showMain());
 
     const overlayAccelerator = process.platform === 'darwin' ? 'Command+Shift+O' : 'Alt+Shift+O';
-    if (!globalShortcut.register(overlayAccelerator, () => {
-      store.setSettings({ overlayEnabled: !overlayEnabled() });
-      pump();
-    })) {
+    if (!globalShortcut.register(overlayAccelerator, toggleOverlay)) {
       console.warn(`[shortcut] ${overlayAccelerator} is already taken`);
     }
 
