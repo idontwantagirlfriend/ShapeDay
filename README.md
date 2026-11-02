@@ -50,7 +50,7 @@ It holds the API key — never commit it. Installer updates in place and keep it
 ```bash
 npm install
 npm start        # run
-npm test         # 52 unit tests
+npm test         # 55 unit tests
 npm run test:e2e # 39-check driver through the real UI
 npm run shot     # seed a demo day, screenshot every window
 npm run assets   # normalize dropped-in icons/logos (assets/raw/) into ico/icns/tray slots
