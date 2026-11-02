@@ -34,3 +34,17 @@ linux:
   icon: assets/icon.png
   target: AppImage
   category: Office
+mac:
+  icon: assets/icon.icns
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  artifactName: ShapeDay-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Signing and notarization activate automatically when CSC_LINK/CSC_KEY_PASSWORD
+  # plus APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID are set (see README:
+  # Signing). Without them the app ships unsigned and Gatekeeper needs a bypass.
+dmg:
+  artifactName: ShapeDay-${version}-${arch}.${ext}

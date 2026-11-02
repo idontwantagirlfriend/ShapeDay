@@ -1,6 +1,6 @@
 # ShapeDay
 
-Plan. Visualize. Report. A tactile day-shape work tracker with overwork awareness. Local-first; nothing leaves the machine unless you configure an AI endpoint.
+Plan. Visualize. Report. A tactile day-shape work tracker with overwork awareness. Local-first; nothing leaves the machine unless you configure an AI endpoint. Ships for Windows and macOS (plus a Linux AppImage).
 
 ## Plan
 
@@ -24,7 +24,7 @@ Template arguments: `{{scope}} {{daysTracked}} {{tasksDone}} {{tasksTotal}} {{ta
 
 ## Overlay
 
-Always-on-top bar (draggable, hand cursor, adjustable opacity), break toast with countdown, click-through overwork tint. Tray-resident; `Alt+Shift+O` toggles. Background image is customizable — cover-fit, ratio kept, under a readability scrim.
+Always-on-top bar (draggable, hand cursor, adjustable opacity), break toast with countdown, click-through overwork tint. Tray/menu-bar-resident; `Alt+Shift+O` (Windows/Linux) or `⌘⇧O` (macOS) toggles. Background image is customizable — cover-fit, ratio kept, under a readability scrim.
 
 ## AI (optional, opt-in per feature)
 
@@ -37,22 +37,30 @@ Any OpenAI-compatible `chat/completions` endpoint: Base URL + Model (+ key if re
 
 No telemetry. The app itself makes zero outbound requests and collects nothing. The only network traffic is the opt-in LLM features, and it goes solely to the endpoint you configure.
 
-One JSON file: `~/.config/ShapeDay/shapeday.json` (`%APPDATA%\ShapeDay\` on Windows). Holds the API key — never commit it. Installer updates in place and keep it.
+One JSON file:
+
+- Windows: `%APPDATA%\ShapeDay\shapeday.json`
+- macOS: `~/Library/Application Support/ShapeDay/shapeday.json`
+- Linux: `~/.config/ShapeDay/shapeday.json`
+
+It holds the API key — never commit it. Installer updates in place and keep it.
 
 ## Develop & build
 
 ```bash
 npm install
 npm start        # run
-npm test         # 43 unit tests
+npm test         # 52 unit tests
 npm run test:e2e # 39-check driver through the real UI
 npm run shot     # seed a demo day, screenshot every window
-npm run assets   # normalize dropped-in icons/logos (assets/raw/)
+npm run assets   # normalize dropped-in icons/logos (assets/raw/) into ico/icns/tray slots
 npm run dist:win # Windows installer + portable exe
+npm run dist:mac # macOS universal dmg + zip (run on macOS)
+npm run dist:linux # Linux AppImage
 ```
 
-Windows targets cross-build from Linux (NSIS step needs wine); Linux builds skip exe signing only — `--config.win.signExecutable=false` — while icon embedding still runs, so the brand thumbnail ships in the exe.
+Windows targets also cross-build from Linux (NSIS step needs wine); Linux builds skip exe signing only — `--config.win.signExecutable=false` — while icon embedding still runs, so the brand thumbnail ships in the exe. macOS packaging must run on macOS (`npm run dist:mac` builds a universal Intel + Apple Silicon dmg + zip).
 
 ## Signing
 
-The "Unknown Publisher" / SmartScreen warning appears because the exes are unsigned. Getting a signature costs quite a bit. I give up.
+Unsigned downloads trigger warnings: SmartScreen on Windows, Gatekeeper on macOS. Getting signatures costs quite a bit. I give up. On macOS, right-click the app → **Open** the first time, or run `xattr -dr com.apple.quarantine /Applications/ShapeDay.app`. electron-builder signs and notarizes automatically when the standard credentials are present in the environment: `CSC_LINK` + `CSC_KEY_PASSWORD` for Windows; the same pair plus `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID` for macOS.

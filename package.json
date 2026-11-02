@@ -14,7 +14,8 @@
     "assets": "node scripts/normalize-assets.mjs",
     "llm:smoke": "node scripts/llm-smoke.mjs",
     "dist:win": "electron-builder --win nsis portable",
-    "dist:linux": "electron-builder --linux AppImage"
+    "dist:linux": "electron-builder --linux AppImage",
+    "dist:mac": "electron-builder --mac dmg zip --universal"
   },
   "devDependencies": {
     "electron": "^37.0.0",

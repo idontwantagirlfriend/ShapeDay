@@ -47,7 +47,9 @@ function createMainWindow() {
       webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
     })
   );
-  win.removeMenu();
+  // On macOS the menu bar is application-wide and installed in main.cjs;
+  // removeMenu() only targets the per-window menu on Windows/Linux.
+  if (process.platform !== 'darwin') win.removeMenu();
   win.loadFile(UI('index.html'));
   win.once('ready-to-show', () => win.show());
   return win;
@@ -93,6 +95,7 @@ function createBar() {
   );
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setIgnoreMouseEvents(true, { forward: true });
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(UI('bar.html'));
   return win;
 }
@@ -118,6 +121,7 @@ function createToast() {
     })
   );
   win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(UI('break.html'));
   return win;
 }
@@ -202,6 +206,7 @@ function createEvalPop() {
     })
   );
   win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(UI('eval.html'));
   return win;
 }

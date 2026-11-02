@@ -5,9 +5,11 @@
  * assets/raw/ and run `npm run assets`. Each file is matched to a slot by
  * name, letterboxed to the slot's canonical square size, re-encoded as PNG
  * with metadata stripped, and budget-checked so embedded files stay small
- * (progressive downscale until under budget). The Windows .ico is rebuilt
- * from the icon. Missing slots get a quiet placeholder so the app always
- * builds. assets/manifest.json records every generated file.
+ * (progressive downscale until under budget). The Windows .ico and the
+ * macOS .icns are rebuilt from the icon; the macOS menu-bar template is
+ * reduced to black + alpha so the system can tint it for light/dark mode.
+ * Missing slots get a quiet placeholder so the app always builds.
+ * assets/manifest.json records every generated file.
  */
 import { mkdir, readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -21,9 +23,14 @@ const KB = 1024;
 const SLOTS = [
   { file: 'assets/icon.png', size: 512, budget: 96 * KB, match: /icon/i, avoid: [/tray/i, /logo/i] },
   { file: 'assets/tray.png', size: 32, budget: 8 * KB, match: /tray|menu/i },
+  // macOS menu bar: a template image is black + alpha; Electron loads the
+  // @2x sibling automatically on Retina displays.
+  { file: 'assets/trayTemplate.png', size: 16, budget: 4 * KB, match: /tray|menu/i, template: true },
+  { file: 'assets/trayTemplate@2x.png', size: 32, budget: 8 * KB, match: /tray|menu/i, template: true },
   { file: 'assets/logo.png', size: 512, budget: 64 * KB, match: /logo|mark|word/i },
   { file: 'assets/logo@2x.png', size: 1024, budget: 128 * KB, match: /logo|mark|word/i, preferLarge: true },
   { file: 'assets/icon.ico', derived: 'icon' },
+  { file: 'assets/icon.icns', derived: 'icns' },
 ];
 
 const READABLE = /\.(png|jpe?g|webp|bmp)$/i;
@@ -100,6 +107,38 @@ async function buildIco(iconSource) {
   return Buffer.concat(parts);
 }
 
+/** Wrap PNGs at all modern sizes into a macOS .icns container (PNG entries). */
+async function buildIcns(iconSource) {
+  const types = [
+    ['icp4', 16], ['icp5', 32], ['icp6', 64],
+    ['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic10', 1024],
+    ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512],
+  ];
+  const parts = [];
+  for (const [type, size] of types) {
+    const buf = await (await renderSquare(iconSource, size)).getBuffer('image/png');
+    const head = Buffer.alloc(8);
+    head.write(type, 0, 4, 'ascii');
+    head.writeUInt32BE(buf.length + 8, 4);
+    parts.push(head, buf);
+  }
+  const header = Buffer.alloc(8);
+  header.write('icns', 0, 4, 'ascii');
+  header.writeUInt32BE(8 + parts.reduce((n, b) => n + b.length, 0), 4);
+  return Buffer.concat([header, ...parts]);
+}
+
+/** Template images keep only alpha, as black — macOS recolors them itself. */
+function toTemplate(img) {
+  const out = img.clone();
+  for (let y = 0; y < out.height; y++) {
+    for (let x = 0; x < out.width; x++) {
+      out.setPixelColor(out.getPixelColor(x, y) & 0xff, x, y); // 0x000000AA
+    }
+  }
+  return out;
+}
+
 async function main() {
   await mkdir(RAW, { recursive: true });
   const raws = (await readdir(RAW)).filter((f) => READABLE.test(f));
@@ -146,15 +185,28 @@ async function main() {
       continue;
     }
 
+    if (slot.derived === 'icns') {
+      const src =
+        sources.get('assets/icon.png') ||
+        sources.get('assets/logo.png') || // the brand logo doubles as the icon
+        (await placeholder(1024, 'icon'));
+      const buf = await buildIcns(src);
+      await writeFile(outPath, buf);
+      manifest.slots.push(slotEntry(slot, buf.length, 'derived'));
+      console.log(`  = assets/icon.icns (${buf.length} bytes, 11 entries)`);
+      continue;
+    }
+
     // Fallback chain: this slot's own raw art → the icon's raw art → the
     // logo's raw art (the brand logo doubles as the app icon) → placeholder.
     const kind = /tray/.test(slot.file) ? 'tray' : 'icon';
     const fromRaw = sources.has(slot.file);
-    const src =
+    const source =
       sources.get(slot.file) ||
       sources.get('assets/icon.png') ||
       sources.get('assets/logo.png') ||
       (await placeholder(slot.size, kind));
+    const src = slot.template ? toTemplate(source) : source;
     const buf = await encodeBudgeted(src, slot.size, slot.budget, slot.file);
     await writeFile(outPath, buf);
     const origin = fromRaw
@@ -164,8 +216,9 @@ async function main() {
         : sources.has('assets/logo.png')
           ? 'logo-fallback'
           : 'placeholder';
-    manifest.slots.push(slotEntry(slot, buf.length, origin));
-    console.log(`  = ${slot.file} (${buf.length} bytes, ${slot.size}px, ${origin})`);
+    const tagged = slot.template ? `${origin}-template` : origin;
+    manifest.slots.push(slotEntry(slot, buf.length, tagged));
+    console.log(`  = ${slot.file} (${buf.length} bytes, ${slot.size}px, ${tagged})`);
   }
 
   await writeFile(path.join(ROOT, 'assets', 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -175,7 +228,7 @@ async function main() {
 function slotEntry(slot, bytes, origin) {
   return {
     file: slot.file,
-    canonicalSize: slot.size || '16–256 (ico)',
+    canonicalSize: slot.size || (slot.derived === 'icns' ? '16–1024 (icns)' : '16–256 (ico)'),
     budgetBytes: slot.budget || null,
     bytes,
     origin,

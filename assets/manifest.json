@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-15T02:33:06.184Z",
+  "generatedAt": "2026-11-02T01:31:44.765Z",
   "slots": [
     {
       "file": "assets/icon.png",
@@ -15,6 +15,22 @@
       "budgetBytes": 8192,
       "bytes": 539,
       "origin": "logo-fallback",
+      "naming": "raw filename matching /tray|menu/i"
+    },
+    {
+      "file": "assets/trayTemplate.png",
+      "canonicalSize": 16,
+      "budgetBytes": 4096,
+      "bytes": 240,
+      "origin": "logo-fallback-template",
+      "naming": "raw filename matching /tray|menu/i"
+    },
+    {
+      "file": "assets/trayTemplate@2x.png",
+      "canonicalSize": 32,
+      "budgetBytes": 8192,
+      "bytes": 400,
+      "origin": "logo-fallback-template",
       "naming": "raw filename matching /tray|menu/i"
     },
     {
@@ -38,6 +54,14 @@
       "canonicalSize": "16–256 (ico)",
       "budgetBytes": null,
       "bytes": 13349,
+      "origin": "derived",
+      "naming": "derived from icon.png"
+    },
+    {
+      "file": "assets/icon.icns",
+      "canonicalSize": "16–1024 (icns)",
+      "budgetBytes": null,
+      "bytes": 89484,
       "origin": "derived",
       "naming": "derived from icon.png"
     }

@@ -137,14 +137,47 @@ function assetPath(rel) {
 }
 
 function trayIcon() {
-  // Standardized slots produced by scripts/normalize-assets.mjs
-  for (const p of ['tray.png', 'icon.png']) {
+  // Standardized slots produced by scripts/normalize-assets.mjs. macOS menu
+  // bar icons are template images: black + alpha, tinted by the system for
+  // light/dark mode (trayTemplate@2x.png is picked up automatically).
+  const isMac = process.platform === 'darwin';
+  for (const p of isMac ? ['trayTemplate.png', 'tray.png', 'icon.png'] : ['tray.png', 'icon.png']) {
     try {
       const img = nativeImage.createFromPath(assetPath(p));
-      if (!img.isEmpty()) return img;
+      if (!img.isEmpty()) {
+        if (isMac && p === 'trayTemplate.png') img.setTemplateImage(true);
+        return img;
+      }
     } catch {}
   }
   return nativeImage.createEmpty();
+}
+
+/** macOS has an application-wide menu bar; roles keep the standard shortcuts
+ *  (Cmd+C/V, Cmd+Q, window management) working while the window itself has no
+ *  in-window menu. Windows/Linux remove the window menu instead. */
+function installAppMenu() {
+  if (process.platform !== 'darwin') return;
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      {
+        label: 'View',
+        submenu: [
+          { label: 'Show ShapeDay', click: () => showMain() },
+          {
+            label: 'Toggle Overlay',
+            click: () => {
+              store.setSettings({ overlayEnabled: !overlayEnabled() });
+              pump();
+            },
+          },
+        ],
+      },
+      { role: 'windowMenu' },
+    ])
+  );
 }
 
 function overlayEnabled() {
@@ -357,6 +390,7 @@ if (!gotLock) {
   app.on('second-instance', () => showMain());
 
   app.whenReady().then(() => {
+    installAppMenu();
     mainWin = windows.createMainWindow();
     // closing hides to tray: the window object survives, so tray-restore is
     // instant and nothing ever calls show() on a destroyed window
@@ -390,12 +424,19 @@ if (!gotLock) {
       ])
     );
     tray.setToolTip('ShapeDay');
-    tray.on('click', () => showMain());
+    // On macOS the tray context menu opens on click; elsewhere click restores.
+    if (process.platform !== 'darwin') tray.on('click', () => showMain());
 
-    globalShortcut.register('Alt+Shift+O', () => {
+    const overlayAccelerator = process.platform === 'darwin' ? 'Command+Shift+O' : 'Alt+Shift+O';
+    if (!globalShortcut.register(overlayAccelerator, () => {
       store.setSettings({ overlayEnabled: !overlayEnabled() });
       pump();
-    });
+    })) {
+      console.warn(`[shortcut] ${overlayAccelerator} is already taken`);
+    }
+
+    // macOS: the dock icon brings the app back after the last window closes.
+    app.on('activate', () => showMain());
 
     pump();
     setInterval(pump, 1000);
