@@ -347,6 +347,9 @@ function openTitleEditor(task, span) {
     box.style.height = 'auto';
     box.style.height = `${Math.min(120, box.scrollHeight)}px`;
   };
+  const focusPoll = setInterval(() => {
+    if (!wrap.contains(document.activeElement)) close(true);
+  }, 80);
   const close = async (commit) => {
     if (closed || closing) return;
     const v = editor.value().replace(/\s+/g, ' ').trim();
@@ -360,6 +363,7 @@ function openTitleEditor(task, span) {
       }
       closed = true;
       editor.destroy();
+      clearInterval(focusPoll);
       editingTitle = false;
       span.textContent = task.title;
       lastPlanSig = null;
@@ -374,13 +378,6 @@ function openTitleEditor(task, span) {
     if (e.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); close(true); }
     if (e.key === 'Escape') { e.preventDefault(); close(true); }
-  });
-  wrap.addEventListener('focusout', () => {
-    // Popover focus handling can leave relatedTarget null; inspect the settled
-    // focus after the helper has hidden, rather than committing between fields.
-    queueMicrotask(() => {
-      if (!wrap.contains(document.activeElement)) close(true);
-    });
   });
   box.addEventListener('click', (e) => e.stopPropagation());
   span.textContent = '';
