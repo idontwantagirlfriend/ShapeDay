@@ -7,14 +7,20 @@
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
 // the electron module's export IS the path to the binary
 const electronPath = require('electron');
 const flag = process.argv[2] === 'shot' ? 'SHAPEDAY_SHOT' : 'SHAPEDAY_E2E';
 
-const env = { ...process.env, [flag]: '1' };
+const profile = mkdtempSync(join(tmpdir(), 'shapeday-harness-'));
+const env = { ...process.env, [flag]: '1', SHAPEDAY_TEST_USER_DATA: profile };
 delete env.ELECTRON_RUN_AS_NODE;
 
 const child = spawn(electronPath, ['.', '--no-sandbox'], { stdio: 'inherit', env });
-child.on('exit', (code) => process.exit(code ?? 1));
+const cleanup = () => rmSync(profile, { recursive: true, force: true });
+child.on('error', (error) => { cleanup(); console.error(error); process.exit(1); });
+child.on('exit', (code) => { cleanup(); process.exit(code ?? 1); });

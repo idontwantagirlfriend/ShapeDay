@@ -15,16 +15,32 @@ const activeBox = document.getElementById('active');
 const countdown = document.getElementById('countdown');
 
 let mode = 'propose'; // propose | counting
+let proposalData = null;
+
+function paintNotice() {
+  document.documentElement.lang = locale;
+  if (mode === 'counting') {
+    headline.textContent = T('toast.on_break');
+    sub.textContent = T('toast.look_away');
+  } else {
+    const n = breakSetting.minutes;
+    const manual = proposalData?.manual === true;
+    headline.textContent = T(manual ? 'toast.manual' : 'toast.done');
+    sub.textContent = manual
+      ? T('toast.manual_text', { n })
+      : proposalData?.nextTitle
+        ? T('toast.next_up', { title: proposalData.nextTitle }) + ' ' + T('toast.faster', { n })
+        : T('toast.nothing', { n });
+  }
+  document.title = headline.textContent;
+  fitWindow();
+}
 
 function show(mode_) {
   mode = mode_;
   proposeBox.hidden = mode !== 'propose';
   activeBox.hidden = mode !== 'counting';
-  if (mode === 'counting') {
-    headline.textContent = T('toast.on_break');
-    sub.textContent = T('toast.look_away');
-  }
-  fitWindow();
+  paintNotice();
 }
 
 /** Tell the main process the CONTENT height; it never scrolls, never loops:
@@ -106,13 +122,8 @@ document.getElementById('end').addEventListener('click', () => {
 
 shapeday.onEvent((ev) => {
   if (ev.type === 'break-propose') {
+    proposalData = ev.data || {};
     show('propose');
-    headline.textContent = T('toast.done');
-    const n = breakSetting.minutes;
-    sub.textContent = ev.data?.nextTitle
-      ? T('toast.next_up', { title: ev.data.nextTitle }) + ' ' + T('toast.faster', { n })
-      : T('toast.nothing', { n });
-    fitWindow();
   }
   if (ev.type === 'break-started') show('counting');
   if (ev.type === 'break-over' || ev.type === 'break-skipped') mode = 'propose';
@@ -120,8 +131,8 @@ shapeday.onEvent((ev) => {
 
 
 let breakSetting = { minutes: 10, locale: 'en-us' };
-shapeday.call('i18n:get').then((r) => { I18N.setCatalogs(r.catalogs); paintAccept(); });
-shapeday.call('day:get').then((s) => { if (s && s.settings) { breakSetting.locale = I18N.resolve(s.settings.locale || 'auto', navigator.language); } });
+shapeday.call('i18n:get').then((r) => { I18N.setCatalogs(r.catalogs); paintAccept(); paintNotice(); });
+shapeday.call('day:get').then((s) => { if (s && s.settings) onTick(s); });
 
 function paintAccept() {
   document.getElementById('accept-pre').textContent = T('toast.take_a');
@@ -129,14 +140,14 @@ function paintAccept() {
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = T(el.dataset.i18n);
 }
 
-shapeday.onTick((s) => {
+function onTick(s) {
   const newLocale = I18N.resolve(s.settings.locale || 'auto', navigator.language);
   if (newLocale !== locale) { locale = newLocale; paintAccept(); }
-  document.title = T('Task done.');
   breakSetting = { minutes: s.settings.breakMinutes ?? 10, locale };
   if (!editingBreakMins) minsSpan.textContent = String(s.settings.breakMinutes ?? 10);
   // Adopt a break that's already running (restart mid-break, or accepted elsewhere).
   if (s.break && mode === 'propose') show('counting');
+  paintNotice();
   if (mode !== 'counting') return;
   if (!s.break) return; // ended elsewhere (auto or main window)
   const ms = Math.max(0, s.break.plannedEnd - s.now);
@@ -144,4 +155,5 @@ shapeday.onTick((s) => {
   const sec = Math.floor((ms % 60000) / 1000);
   countdown.textContent = `${m}:${String(sec).padStart(2, '0')}`;
   countdown.classList.toggle('late', ms === 0);
-});
+}
+shapeday.onTick(onTick);

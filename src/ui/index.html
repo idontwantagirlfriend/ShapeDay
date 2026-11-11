@@ -11,14 +11,13 @@
   <div id="app">
     <header>
       <img class="brand-logo" src="../../assets/logo.png" alt="ShapeDay" />
-      <div class="brand">Shape<span>Day</span></div>
       <div class="day" id="hd-day">—</div>
       <div class="day-progress" title="Day progress in planned minutes">
         <div class="track"><div class="fill" id="hd-fill" style="width:0%"></div></div>
         <div class="pct" id="hd-pct">0%</div>
       </div>
       <details class="settings">
-        <summary>⚙</summary>
+        <summary data-i18n-aria="shell.settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.5 2a8 8 0 0 0-2 1.2l-2-.6-2.5 4.3 1.5 1.4a8 8 0 0 0 0 2.4L2.5 15 5 19.3l2-.6a8 8 0 0 0 2 1.2l.5 2h5l.5-2a8 8 0 0 0 2-1.2l2 .6 2.5-4.3-1.5-1.3a8 8 0 0 0 0-2.4l1.5-1.4L19 5.6l-2 .6A8 8 0 0 0 15 5l-.5-2Z"/><circle cx="12" cy="12.5" r="3.5"/></svg></summary>
         <div class="settings-pop">
           <label><span data-i18n="set.work_start">Work start</span>
             <span class="ctl">
@@ -127,7 +126,7 @@
       <!-- Phase One: Plan -->
       <section class="view active" id="view-plan">
         <div class="plan-add">
-          <input id="add-input" data-i18n-ph="plan.input_ph" placeholder="What's due today?" autocomplete="off" />
+          <div class="task-entry" id="add-entry"><input id="add-input" data-i18n-ph="plan.input_ph" placeholder="What's due today?" autocomplete="off" /></div>
           <button class="add-round" id="add-btn" data-i18n-title="plan.add_title" title="List it">＋</button>
         </div>
         <div class="eta-banner" id="eta-banner" hidden>
@@ -139,17 +138,19 @@
         <ul class="tasks" id="task-list"></ul>
         <div class="plan-tools">
           <button class="icon-btn" id="btn-reset" data-i18n-title="plan.reset" title="Keep titles, everything back to red">↺</button>
-          <button class="icon-btn" id="btn-clear" data-i18n-title="plan.clear" title="Remove every task from today">🗑</button>
-          <div class="spacer"></div>
-          <span class="toggle" title="Mark the immediate next task in progress automatically"><span data-i18n="plan.auto">Auto-advance</span>
-            <input type="checkbox" id="plan-auto" />
-          </span>
+          <button class="icon-btn" id="btn-clear" data-i18n-title="plan.clear" title="Clear the day"><svg class="action-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 10v7M14 10v7"/></svg></button>
+          <label class="icon-toggle auto-advance" data-i18n-help="plan.auto" data-help="Auto-advance">
+            <input type="checkbox" id="plan-auto" checked data-i18n-aria="plan.auto" aria-label="Auto-advance" />
+            <svg class="action-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-7-7 7 7-7 7"/></svg>
+          </label>
+          <button class="icon-btn recurring-toggle" id="btn-recurring" aria-label="Recurring" aria-expanded="false" aria-controls="recurring-panel"><svg class="action-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg><span id="recurring-count" class="recurring-count" hidden></span></button>
         </div>
 
         <details class="reflog" id="reflog" hidden>
           <summary><span data-i18n="reflog.title">Reflog</span> <span class="count" id="reflog-count"></span>
-            <label class="mini-toggle" title="Open by default on launch"><span data-i18n="reflog.always_open">always open</span>
-              <input type="checkbox" id="reflog-open" />
+            <label class="icon-toggle reflog-lock">
+              <input type="checkbox" id="reflog-open" data-i18n-aria="reflog.always_open" aria-label="always open" />
+              <svg class="action-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg>
             </label>
           </summary>
           <ul id="reflog-list"></ul>
@@ -169,6 +170,7 @@
               <button id="viz-next" title="Next">›</button>
             </span>
           </div>
+          <div id="week-header" class="week-header" hidden></div>
           <canvas id="timeline" height="380"></canvas>
           <div id="viz-bubble" class="viz-bubble" hidden></div>
           <div id="week-summaries" class="week-summaries" hidden></div>
@@ -197,7 +199,12 @@
             <button data-scope="month" data-i18n="viz.month">Month</button>
             <button data-scope="year" data-i18n="viz.year">Year</button>
           </div>
-          <button id="btn-resummarize" hidden>⟳ <span data-i18n="sum.resummarize">Re-summarize</span></button>
+          <div class="sum-nav">
+            <button id="sum-prev" title="Previous" aria-label="Previous">‹</button>
+            <input id="sum-date" class="sum-date" type="date" aria-label="Date" />
+            <button id="sum-next" title="Next" aria-label="Next">›</button>
+          </div>
+          <button class="icon-btn" id="btn-resummarize" hidden data-i18n-title="sum.resummarize" title="Re-summarize" data-i18n-aria="sum.resummarize" aria-label="Re-summarize"><svg class="action-glyph" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/></svg></button>
         </div>
         <div class="metrics" id="sum-metrics"></div>
         <div class="issues" id="sum-issues"></div>
@@ -206,9 +213,12 @@
     </main>
   </div>
 
+  <div id="recurring-panel" class="recurring-panel" popover="manual"><ul id="recurring-list"></ul></div>
+
   <!-- shared pure core, then UI -->
   <script src="../core/i18n.cjs"></script>
   <script src="../core/timeutil.cjs"></script>
+  <script src="../core/recurrence.cjs"></script>
   <script src="../core/overwork.cjs"></script>
   <script src="timeline.js"></script>
   <script src="app.js"></script>

@@ -1,7 +1,7 @@
 /**
  * bar — two overlay styles, one file.
  *
- * top (default): full-width strip. Click-through everywhere except the
+ * top (default): full-width strip. Click-through except the break button and
  * center grip (⋯), which is the only draggable spot — the strip no longer
  * steals clicks from other apps' bars. The strip's whole background doubles
  * as the day-progress bar.
@@ -16,8 +16,8 @@ const T = (k, p) => I18N.t(locale, k, p);
 
 const $id = (id) => document.getElementById(id);
 const els = {
-  top: { bar: $id('topbar'), dot: $id('top-dot'), headline: $id('top-headline'), time: $id('top-time'), grip: $id('strip-grip'), fill: $id('strip-fill') },
-  fl: { bar: $id('floater'), dot: $id('fl-dot'), headline: $id('fl-headline'), clock: $id('fl-clock') },
+  top: { bar: $id('topbar'), dot: $id('top-dot'), headline: $id('top-headline'), time: $id('top-time'), grip: $id('strip-grip'), fill: $id('strip-fill'), breakButton: $id('top-break') },
+  fl: { bar: $id('floater'), dot: $id('fl-dot'), headline: $id('fl-headline'), clock: $id('fl-clock'), breakButton: $id('fl-break') },
 };
 
 const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.floor(m % 60)).padStart(2, '0')}`;
@@ -58,6 +58,14 @@ let currentStyle = null;
 // top strip only: mirror of the window's mouse policy, so redundant
 // toggles don't spam IPC. Main applies the base policy in applyBarStyle.
 let interactive = false;
+let onBreak = false;
+
+for (const el of [els.top.breakButton, els.fl.breakButton]) {
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!onBreak) shapeday.call('break:propose', { manual: true });
+  });
+}
 
 shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs));
 
@@ -69,6 +77,11 @@ shapeday.onTick((s) => {
     interactive = false;
     els.top.bar.hidden = style !== 'top';
     els.fl.bar.hidden = style !== 'fl';
+  }
+  onBreak = !!s.break;
+  for (const el of [els.top.breakButton, els.fl.breakButton]) {
+    el.disabled = onBreak;
+    el.setAttribute('aria-label', T('bar.manual_break'));
   }
   const opacity = Math.max(0.2, Math.min(1, (s.settings.overlayOpacity ?? 92) / 100));
 
@@ -95,9 +108,9 @@ shapeday.onTick((s) => {
   }
 });
 
-// ---------- top strip: click-through except the grip ----------
-// The window ignores the mouse (forwarding moves); hovering the grip turns
-// interactivity on, leaving the window turns it off. The grip is the drag
+// ---------- top strip: click-through except the grip and break action ----------
+// The window ignores the mouse (forwarding moves); hovering a control turns
+// interactivity on, leaving the controls turns it off. The grip is the drag
 // anchor. The floater stays interactive, so its capsule can be dragged.
 function setInteractive(on) {
   if (on === interactive) return;
@@ -111,14 +124,19 @@ function setInteractive(on) {
 }
 document.addEventListener('mousemove', (e) => {
   if (currentStyle !== 'top') return;
-  const r = els.top.grip.getBoundingClientRect();
-  const inside = e.clientX >= r.left - 6 && e.clientX <= r.right + 6 && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4;
+  const inside = [els.top.grip, els.top.breakButton].some((el) => {
+    const r = el.getBoundingClientRect();
+    const padX = el === els.top.grip ? 6 : 0;
+    const padY = el === els.top.grip ? 4 : 0;
+    return e.clientX >= r.left - padX && e.clientX <= r.right + padX &&
+      e.clientY >= r.top - padY && e.clientY <= r.bottom + padY;
+  });
   setInteractive(inside);
 });
 // crossing the window edge sends no further mousemove, so restore
 // click-through here or the strip would keep eating clicks
 document.addEventListener('mouseout', (e) => {
-  if (!e.relatedTarget) setInteractive(false);
+  if (currentStyle === 'top' && !e.relatedTarget) setInteractive(false);
 });
 
 // ---------- dragging (strip: grip only; floater: anywhere) ----------

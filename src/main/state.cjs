@@ -10,14 +10,20 @@ const Model = require('../core/model.cjs');
 const Estimator = require('../core/estimator.cjs');
 const Advisor = require('../core/advisor.cjs');
 const LLM = require('../core/llm.cjs');
+const { randomUUID } = require('node:crypto');
 const Template = require('../core/template.cjs');
+const Recurrence = require('../core/recurrence.cjs');
 
 function createState(store, hooks = {}) {
   const pending = { events: [] }; // queued events drained each tick/action
   const onDirty = () => hooks.onDirty && hooks.onDirty();
 
   const etaDebounce = { timer: null, inFlight: false };
-  const llmReport = { cache: {}, inFlight: {}, mut: 0, cacheMut: -1 };
+  const llmReport = { cache: {}, inFlight: {}, mut: 0 };
+  let stopped = false;
+  // Capture before the first tick writes this session's heartbeat.
+  const startupDays = new Set(store.daysRange('0000-01-01', '9999-12-31'));
+  const startupLastSeenAt = store.lastSeenAt;
 
   function emit(type, data) {
     pending.events.push({ type, data });
@@ -63,6 +69,7 @@ function createState(store, hooks = {}) {
           }
         : null,
       settings: store.settings,
+      recurring: store.recurring,
     };
   }
 
@@ -78,7 +85,6 @@ function createState(store, hooks = {}) {
    * stamps never absorb the break).
    */
   function maintainIfAuto(day, now) {
-    if (!autoMode()) return;
     if (activeBreak(day)) {
       // On a break, the current task goes "on break" too (paused) — its
       // worked-time stamps never absorb the break, and it resumes after.
@@ -86,12 +92,19 @@ function createState(store, hooks = {}) {
         if (t.status === 'yellow') {
           const segs = t.worked || (t.worked = []);
           if (segs.length && segs[segs.length - 1].end == null) segs[segs.length - 1].end = now;
+          activeBreak(day).resumeTaskId = t.id;
           t.status = 'paused';
         }
       }
       return;
     }
-    Model.maintainCurrent(day, now);
+    const ended = [...(day.breaks || [])].reverse().find((b) => b.end != null && b.resumeTaskId);
+    if (ended) {
+      const task = Model.findTask(day, ended.resumeTaskId);
+      delete ended.resumeTaskId;
+      if (!autoMode() && task?.status === 'paused' && !Model.activeTask(day)) Model.switchTo(day, task.id, now);
+    }
+    if (autoMode()) Model.maintainCurrent(day, now);
   }
 
   /**
@@ -102,26 +115,72 @@ function createState(store, hooks = {}) {
 
   let lastDayKey = null;
 
-  /** Yesterday's hung tasks return as fresh red tasks at the TOP of today's
-   *  list, once — the previous day is marked so restarts never duplicate.
-   *  They don't accumulate: deleting is always one hover-click away. */
+  /** Carry the most recent stored earlier day, not just calendar yesterday. */
   function reviveHungTasks(todayDay, now) {
-    const d = new Date(todayDay.date + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    const pad = (x) => String(x).padStart(2, '0');
-    const prevKey = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const prev = store.day(prevKey);
-    if (!prev || prev.whitesMigrated) return;
-    prev.whitesMigrated = true;
-    const hung = (prev.tasks || []).filter((t) => t.status === 'white');
-    if (!hung.length) return;
+    const prev = store.daysRange('0000-01-01', todayDay.date)
+      .filter((d) => d.date < todayDay.date).at(-1);
+    if (!prev || prev.tasksMigratedTo) return;
+    const hung = (prev.tasks || []).filter((t) =>
+      ['red', 'white', 'paused'].includes(t.status) && !(prev.whitesMigrated && t.status === 'white'));
     logged(todayDay, () => {
-      for (const t of hung.reverse()) {
-        const fresh = Model.newTask(t.title, t.estimateMin);
-        todayDay.tasks.unshift(fresh); // on top
+      const fresh = hung.filter((t) => !todayDay.tasks.some((x) =>
+        x.carriedFrom?.date === prev.date && x.carriedFrom?.id === t.id)).map((t) => {
+        const task = Model.newTask(t.title, t.estimateMin);
+        task.createdAt = now;
+        task.carriedFrom = { date: prev.date, id: t.id };
+        if (t.recurringId != null) task.recurringId = t.recurringId;
+        if (t.estEdited) task.estEdited = true;
+        return task;
+      });
+      todayDay.tasks.unshift(...fresh);
+    });
+    prev.tasksMigratedTo = todayDay.date;
+    prev.whitesMigrated = true; // compatibility with older installs
+    touch();
+  }
+
+  function midnightAfter(date) {
+    const d = new Date(date + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+
+  /** No frontier maintenance here: closing a session must never start work. */
+  function closeDay(day, at, recovering = false) {
+    logged(day, () => {
+      for (const task of day.tasks || []) {
+        const end = Math.min(at, midnightAfter(day.date));
+        const open = (task.worked || []).filter((seg) => seg.end == null);
+        for (const seg of open) {
+          // Legacy data without a heartbeat has no evidence of elapsed work.
+          const cutoff = Number.isFinite(end) ? end : seg.start;
+          seg.end = Math.max(seg.start, cutoff);
+        }
+        if (task.status === 'yellow') {
+          task.status = 'green';
+          task.finishedAt = Math.max(task.startedAt || 0, Number.isFinite(end) ? end : 0, ...open.map((s) => s.end));
+          task.evalPrompted = true; // recovery/quit is not an interactive finish
+        }
+      }
+      if (recovering || activeBreak(day)) {
+        for (const brk of day.breaks || []) {
+          if (brk.end == null) brk.end = Math.max(brk.start, Math.min(
+            Number.isFinite(at) ? at : brk.start, brk.start + brk.plannedMin * TimeUtil.MIN));
+          delete brk.resumeTaskId;
+        }
       }
     });
     touch();
+  }
+
+  function shutdown(nowMs = Date.now()) {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(etaDebounce.timer);
+    for (const day of store.daysRange('0000-01-01', TimeUtil.todayKey())) {
+      closeDay(day, startupDays.has(day) ? day.lastSeenAt ?? startupLastSeenAt : nowMs, true);
+    }
+    store.flush();
   }
 
   /** A day keeps the work hours it lived under: charts for past days never
@@ -135,14 +194,79 @@ function createState(store, hooks = {}) {
     }
   }
 
+  function setFrequency(task, frequency, now = Date.now()) {
+    let rule = store.recurring.find((r) => r.id === task.recurringId);
+    if (rule && rule.every === frequency.every && rule.unit === frequency.unit) return rule;
+    store.updateRecurring((rules) => {
+      if (!rule) {
+        // Capture the current estimate once; the compact rule list owns later
+        // duration edits, while task copies retain their individual estimates.
+        rule = { id: randomUUID(), title: task.title, estimateMin: task.estimateMin, createdAt: now };
+        rules.push(rule);
+        task.recurringId = rule.id;
+      }
+      Object.assign(rule, frequency, Recurrence.schedule(frequency, now));
+    });
+    touch();
+    return rule;
+  }
+
+  function removeRecurring(id) {
+    store.updateRecurring((rules) => {
+      const index = rules.findIndex((r) => r.id === id);
+      if (index >= 0) rules.splice(index, 1);
+    });
+    for (const day of store.daysRange('0000-01-01', '9999-12-31')) {
+      for (const task of day.tasks || []) {
+        if (task.recurringId === id) delete task.recurringId;
+      }
+    }
+    touch();
+  }
+
+  function triggerRecurring(day, now, dailyLaunch) {
+    let changed = false;
+    store.updateRecurring((rules) => {
+      for (const rule of rules) {
+        if (!Recurrence.consume(rule, now, dailyLaunch)) continue;
+        changed = true;
+        if (day.tasks.some((t) => t.recurringId === rule.id && ['red', 'yellow', 'paused'].includes(t.status))) continue;
+        logged(day, () => {
+          const task = Model.newTask(rule.title, rule.estimateMin);
+          task.createdAt = now;
+          task.recurringId = rule.id;
+          day.tasks.push(task); // a triggered copy always lands red, without changing completed copies
+        });
+      }
+    });
+    if (changed) touch();
+  }
+
   function tick(nowMs) {
     const now = nowMs ?? Date.now();
     const day = today();
-    if (day.date !== lastDayKey) {
-      lastDayKey = day.date;
-      freezeDayHours(); // close out every finished day under its own hours
-      reviveHungTasks(day, now); // a brand-new day inherits yesterday's hung
+    if (stopped) return { snapshot: snapshot(now), events: drain() };
+    const firstTick = lastDayKey == null;
+    const dailyLaunch = firstTick && store.lastDailyLaunch !== day.date;
+    if (lastDayKey == null) {
+      for (const old of startupDays) {
+        closeDay(old, old.lastSeenAt ?? startupLastSeenAt, true);
+      }
+      startupDays.clear();
     }
+    if (day.date !== lastDayKey) {
+      if (lastDayKey) {
+        const old = store.day(lastDayKey);
+        if (old) closeDay(old, Math.min(now, midnightAfter(old.date)));
+      }
+      lastDayKey = day.date;
+      freezeDayHours();
+      reviveHungTasks(day, now);
+      store.flush(); // closure + migration marker commit together
+    }
+    triggerRecurring(day, now, dailyLaunch);
+    if (firstTick) store.markDailyLaunch(day.date);
+    day.lastSeenAt = now; // persisted by today's updateDay heartbeat
     const brk = activeBreak(day);
     if (brk && now >= brk.start + brk.plannedMin * 60000) {
       brk.end = now;
@@ -256,7 +380,7 @@ function createState(store, hooks = {}) {
   }
 
   async function runEtaRefinement(manual = false, onlyId = null) {
-    if (etaDebounce.inFlight || !estimatorUsesAI()) return;
+    if (stopped || etaDebounce.inFlight || !estimatorUsesAI()) return;
     const day = today();
     // anything unfinished that the human has not hand-edited is fair game:
     // the frontier keeps one task yellow, so red-only would often match nothing.
@@ -291,6 +415,7 @@ function createState(store, hooks = {}) {
         workHours: `${store.settings.workStart}–${store.settings.workEnd}`,
         bias: Estimator.biasFactor(store.historyBefore(day.date)),
       });
+      if (stopped) return;
       let applied = 0;
       for (const u of updates) {
         const t = Model.findTask(day, u.id);
@@ -321,18 +446,21 @@ function createState(store, hooks = {}) {
   function summaryDays(days, now) {
     const s = store.settings;
     return days.map((d) => {
-      const bounds = TimeUtil.workBounds(d.date, s.workStart, s.workEnd);
-      const endRef = d.date === TimeUtil.todayKey() ? now : Math.max(bounds.end, ...(d.tasks || []).map((t) => t.finishedAt ?? 0));
+      const hours = d.hours || s;
+      const bounds = TimeUtil.workBounds(d.date, hours.workStart, hours.workEnd);
+      const endRef = d.date === TimeUtil.todayKey() ? now : Math.min(midnightAfter(d.date), Math.max(bounds.end, ...(d.tasks || []).map((t) => t.finishedAt ?? 0)));
+      const workRef = d.date === TimeUtil.todayKey() ? now : Math.min(now, d.lastSeenAt ?? midnightAfter(d.date));
       return {
         date: d.date,
-        workHours: `${s.workStart}-${s.workEnd}`,
+        scheduledWorkHours: `${hours.workStart}-${hours.workEnd}`,
+        totalActualWorkMinutes: Math.round((d.tasks || []).reduce((sum, t) => sum + Advisor.actualWorkMinutes(t, workRef), 0)),
         overworkMinutes: Math.max(0, Math.round((endRef - bounds.end) / TimeUtil.MIN)),
         breaks: (d.breaks || []).length,
         tasks: (d.tasks || []).map((t) => ({
           id: t.id,
           title: t.title,
           expectedMinutes: t.estimateMin,
-          actualMinutes: Math.round(TimeUtil.taskElapsedMin(t, now)),
+          actualMinutes: Math.round(Advisor.actualWorkMinutes(t, workRef)),
           status: t.status,
         })),
       };
@@ -341,9 +469,8 @@ function createState(store, hooks = {}) {
 
   /** The past three days' summaries, for the daily prompt's {history_reports}.
    *  Persisted AI recaps when present; the local template line as fallback. */
-  function historyReports(now) {
+  function historyReports(now, key = TimeUtil.todayKey()) {
     const s = store.settings;
-    const key = TimeUtil.todayKey();
     const pad = (x) => String(x).padStart(2, '0');
     const from = new Date(key + 'T00:00:00');
     from.setDate(from.getDate() - 3);
@@ -394,52 +521,80 @@ function createState(store, hooks = {}) {
       const dow = (dt.getDay() + 6) % 7;
       dt.setDate(dt.getDate() - dow);
       fromKey = periodKeyFor('day', `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`);
-      toKey = dateKey; // days up to today (future days have no data anyway)
+      dt.setDate(dt.getDate() + 6);
+      toKey = TimeUtil.dateKey(dt);
     } else if (scope === 'month') {
       fromKey = `${y}-${pad(m)}-01`;
-      toKey = dateKey;
+      toKey = TimeUtil.dateKey(new Date(y, m, 0));
     } else if (scope === 'year') {
       fromKey = `${y}-01-01`;
-      toKey = dateKey;
+      toKey = `${y}-12-31`;
     } else {
       return [];
     }
-    return store.daysRange(fromKey, toKey);
+    return store.daysRange(fromKey, toKey < TimeUtil.todayKey() ? toKey : TimeUtil.todayKey());
+  }
+
+  function reportSelection(scope, date) {
+    const selectedScope = ['day', 'week', 'month', 'year'].includes(scope) ? scope : 'day';
+    const key = date == null ? TimeUtil.todayKey() : String(date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || TimeUtil.dateKey(new Date(key + 'T00:00:00')) !== key) return null;
+    return { scope: selectedScope, date: key, periodKey: periodKeyFor(selectedScope, key) };
+  }
+
+  function reportFingerprint(days) {
+    // Heartbeats and wall-clock drift must not make an otherwise unchanged
+    // request stale while it is awaiting the model. Task/period/config changes do.
+    return JSON.stringify({ days: days.map((d) => ({ date: d.date, tasks: d.tasks, breaks: d.breaks, hours: d.hours })), settings: store.settings });
   }
 
   /** Fire-and-merge AI summary; local report renders immediately regardless. */
-  function fireSummary(scope, days) {
-    if (llmReport.inFlight[scope]) return;
-    llmReport.inFlight[scope] = true;
+  function fireSummary(selection, days, force = false) {
+    if (stopped) return;
+    const { scope, date, periodKey } = selection;
+    const key = `${scope}:${periodKey}`;
+    const fingerprint = reportFingerprint(days);
+    const current = llmReport.inFlight[key];
+    if (!force && current?.fingerprint === fingerprint) return;
+    const request = { fingerprint };
+    llmReport.inFlight[key] = request;
     const now = Date.now();
     const daysCtx = summaryDays(days, now);
+    const workStamp = JSON.stringify(daysCtx.map((d) => [d.date, d.totalActualWorkMinutes, d.overworkMinutes]));
     const idToTitle = {};
     for (const d of daysCtx) for (const t of d.tasks) idToTitle[t.id] = t.title;
-    LLM.summarize(llmCfg(), {
+    // The shared LLM transport limits days to 31. Pack years into at most
+    // twelve month entries, retaining every day's context and task citations.
+    const payload = scope === 'year' ? [...new Set(daysCtx.map((d) => d.date.slice(0, 7)))].map((month) => {
+      const entries = daysCtx.filter((d) => d.date.startsWith(month));
+      return { date: month, totalActualWorkMinutes: entries.reduce((sum, d) => sum + d.totalActualWorkMinutes, 0), days: entries };
+    }) : daysCtx;
+    const cfg = llmCfg();
+    Promise.resolve().then(() => LLM.summarize(cfg, {
       scope,
-      days: daysCtx,
-      historyReports: historyReports(now),
+      days: payload,
+      historyReports: historyReports(now, date),
       idToTitle,
-    })
+    }))
       .then((r) => {
-        llmReport.cache[scope] = r;
-        llmReport.cacheMut = llmReport.mut;
-        // one definitive summary per period, latest wins
-        store.putSummary(periodKeyFor(scope, TimeUtil.todayKey()), {
-          at: now,
-          scope,
+        if (stopped || llmReport.inFlight[key] !== request ||
+            fingerprint !== reportFingerprint(daysForScope(scope, date))) return;
+        llmReport.cache[key] = { report: r, fingerprint, workStamp };
+        store.putSummary(periodKey, {
+          at: now, scope, date, periodKey,
           recap: r.headline,
           suggestions: r.issues.map((i) => ({ content: i.text, about: i.about || i.fix || '' })),
         });
-        emit('llm:report', { scope, report: r });
+        emit('llm:report', { scope, date, periodKey, report: r });
         onDirty();
       })
       .catch((e) => {
-        emit('llm:status', { ok: false, where: 'report', error: String(e.message || e).slice(0, 140) });
+        if (stopped || llmReport.inFlight[key] !== request) return;
+        emit('llm:status', { ok: false, where: 'report', scope, date, periodKey, error: String(e.message || e).slice(0, 140) });
         onDirty();
       })
       .finally(() => {
-        llmReport.inFlight[scope] = false;
+        if (llmReport.inFlight[key] === request) delete llmReport.inFlight[key];
         store.flush();
       });
   }
@@ -448,9 +603,12 @@ function createState(store, hooks = {}) {
     'day:get': () => snapshot(),
 
     'task:add': ({ title }) => {
+      const parsed = Recurrence.extract(title);
+      if (!parsed.title || parsed.error) return { ok: false, error: 'invalid recurrence' };
       const day = today();
-      const est = Estimator.estimate(title, store.historyBefore(day.date));
-      const task = Model.newTask(title, est.minutes);
+      const est = Estimator.estimate(parsed.title, store.historyBefore(day.date));
+      const task = Model.newTask(parsed.title, est.minutes);
+      if (parsed.frequency) setFrequency(task, parsed.frequency);
       // Step 1: "I list. I reset the status." — new items land red, on top of nothing.
       logged(day, () => {
         day.tasks.push(task);
@@ -549,9 +707,44 @@ function createState(store, hooks = {}) {
 
     'task:rename': ({ id, title }) => {
       const t = Model.findTask(today(), id);
-      const clean = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-      if (t && clean) t.title = clean;
-      return { ok: !!(t && clean) };
+      const parsed = Recurrence.extract(title);
+      const clean = parsed.title.slice(0, 200);
+      if (!t || !clean || parsed.error) return { ok: false };
+      t.title = clean;
+      if (parsed.frequency) setFrequency(t, parsed.frequency);
+      const rule = store.recurring.find((r) => r.id === t.recurringId);
+      if (rule) store.updateRecurring(() => { rule.title = clean; });
+      touch();
+      return { ok: true, title: clean };
+    },
+
+    'task:setRecurrence': ({ id, frequency }) => {
+      const task = Model.findTask(today(), id);
+      if (!task) return { ok: false };
+      if (!String(frequency || '').trim()) {
+        if (task.recurringId) removeRecurring(task.recurringId);
+        return { ok: true };
+      }
+      const parsed = Recurrence.parse(frequency);
+      if (!parsed) return { ok: false, error: 'invalid recurrence' };
+      return { ok: true, rule: setFrequency(task, parsed) };
+    },
+
+    'recurring:delete': ({ id }) => {
+      removeRecurring(id);
+      return { ok: true };
+    },
+
+    /** The rule's minutes are the duration used by future recurring copies. */
+    'recurring:setEstimate': ({ id, minutes }) => {
+      const rule = store.recurring.find((r) => r.id === id);
+      const value = Number(minutes);
+      if (!rule || String(minutes).trim() === '' || !Number.isInteger(value) || value < 1 || value > 480) {
+        return { ok: false };
+      }
+      store.updateRecurring(() => { rule.estimateMin = value; });
+      touch();
+      return { ok: true, minutes: value };
     },
 
     'task:setEstimate': ({ id, minutes }) => {
@@ -559,6 +752,7 @@ function createState(store, hooks = {}) {
       if (t) {
         t.estimateMin = Math.max(1, Math.min(480, Math.round(minutes)));
         t.estEdited = true; // human override wins over any AI refinement
+        touch();
       }
       return { ok: !!t };
     },
@@ -587,6 +781,12 @@ function createState(store, hooks = {}) {
 
     'day:reviewEtas': () => {
       today().etaReviewed = true;
+      return { ok: true };
+    },
+
+    'break:propose': () => {
+      if (activeBreak(today())) return { ok: false, already: true };
+      emit('break-propose', { manual: true });
       return { ok: true };
     },
 
@@ -674,28 +874,34 @@ function createState(store, hooks = {}) {
     },
 
     /** Manual re-summarize: flush the cached AI summary, regenerate now. */
-    'report:regen': ({ scope }) => {
+    'report:regen': ({ scope, date } = {}) => {
       if (store.settings.summaryMode !== 'ai' || !llmCfg()) {
         return { ok: false, reason: 'summarize is not in AI mode' };
       }
-      const key = ['day', 'week', 'month', 'year'].includes(scope) ? scope : 'day';
-      delete llmReport.cache[key];
-      llmReport.cacheMut = -1; // every cache is now stale by construction
-      fireSummary(key, daysForScope(key, TimeUtil.todayKey()));
-      return { ok: true };
+      const selection = reportSelection(scope, date);
+      if (!selection) return { ok: false, error: 'bad date' };
+      delete llmReport.cache[`${selection.scope}:${selection.periodKey}`];
+      fireSummary(selection, daysForScope(selection.scope, selection.date), true);
+      return { ok: true, ...selection };
     },
 
-    'report:get': ({ scope }) => {
+    'report:get': ({ scope, date } = {}) => {
       const s = store.settings;
-      const key = TimeUtil.todayKey();
-      const days = daysForScope(scope, key);
+      const selection = reportSelection(scope, date);
+      if (!selection) return { error: 'bad date' };
+      scope = selection.scope;
+      const days = daysForScope(scope, selection.date);
       const local = Advisor.report(days, s);
-      local.persisted = store.summary(periodKeyFor(scope, key)); // one definitive summary, latest wins
+      Object.assign(local, selection);
+      local.day = store.day(selection.date) || Model.newDay(selection.date);
+      local.persisted = store.summary(selection.periodKey);
       if (store.settings.summaryMode === 'ai' && llmCfg()) {
-        if (llmReport.cache[scope] && llmReport.cacheMut === llmReport.mut) {
-          local.llm = llmReport.cache[scope];
+        const cached = llmReport.cache[`${scope}:${selection.periodKey}`];
+        const workStamp = JSON.stringify(summaryDays(days, Date.now()).map((d) => [d.date, d.totalActualWorkMinutes, d.overworkMinutes]));
+        if (cached?.fingerprint === reportFingerprint(days) && cached.workStamp === workStamp) {
+          local.llm = cached.report;
         } else {
-          fireSummary(scope, days, local);
+          fireSummary(selection, days);
         }
       } else {
         // Templated-text mode (default): mustache over documented args.
@@ -799,7 +1005,7 @@ function createState(store, hooks = {}) {
     },
   };
 
-  return { snapshot, tick, actions, drain };
+  return { snapshot, tick, actions, drain, shutdown };
 }
 
 module.exports = { createState };

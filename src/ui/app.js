@@ -15,10 +15,11 @@ function applyLocale() {
   for (const el of $$('[data-i18n]')) el.textContent = T(el.dataset.i18n);
   for (const el of $$('[data-i18n-ph]')) el.placeholder = T(el.dataset.i18nPh);
   for (const el of $$('[data-i18n-title]')) el.title = T(el.dataset.i18nTitle);
+  for (const el of $$('[data-i18n-help]')) el.dataset.help = T(el.dataset.i18nHelp);
+  for (const el of $$('[data-i18n-aria]')) el.setAttribute('aria-label', T(el.dataset.i18nAria));
 }
 let currentView = 'plan';
 let sumScope = 'day';
-const aiCache = {}; // scope → last AI summary (survives local re-renders)
 let sumError = null; // last summarize backend error, surfaced in the Summarize view
 
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)}m`);
@@ -38,7 +39,7 @@ function setView(v) {
 
 $$('nav.tabs button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable) return;
   if (e.key === '1') setView('plan');
   if (e.key === '2') setView('viz');
   if (e.key === '3') setView('sum');
@@ -46,14 +47,25 @@ document.addEventListener('keydown', (e) => {
 
 // ---------- plan ----------
 $('#add-btn').addEventListener('click', addTask);
-$('#add-input').addEventListener('keydown', (e) => e.key === 'Enter' && addTask());
-function addTask() {
-  const input = $('#add-input');
-  const title = input.value.trim();
-  if (!title) return;
-  shapeday.call('task:add', { title });
-  input.value = '';
-  input.focus();
+const addEditor = bindEachEditor($('#add-input'), $('#add-entry'));
+$('#add-entry').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTask(); }
+});
+let addingTask = false;
+async function addTask() {
+  const title = addEditor.value().trim();
+  if (!title || addingTask) return;
+  const parsed = Recurrence.extract(title);
+  if (parsed.error || !parsed.title) { addEditor.invalid(); return; }
+  addingTask = true;
+  try {
+    const result = await shapeday.call('task:add', { title });
+    if (result.ok === false) { addEditor.invalid(); return; }
+    if (addEditor.value().trim() === title) {
+      addEditor.reset();
+      $('#add-input').focus();
+    }
+  } finally { addingTask = false; }
 }
 
 $('#btn-reset').addEventListener('click', () => shapeday.call('day:resetStatuses'));
@@ -67,27 +79,244 @@ $('#eta-ai').addEventListener('click', () => {
   shapeday.call('llm:refineEtas');
 });
 
-const HINT_AUTO = {
-  red: () => T('plan.hint.red'),
-  yellow: () => T('plan.hint.yellow_auto'),
-  paused: () => T('plan.hint.paused'),
-  green: () => T('plan.hint.green'),
-  white: () => T('plan.hint.white'),
-};
-const HINT_MANUAL = {
-  red: () => T('plan.hint.red'),
-  yellow: () => T('plan.hint.yellow'),
-  paused: () => T('plan.hint.paused'),
-  green: () => T('plan.hint.green'),
-  white: () => T('plan.hint.white'),
-};
-
 // Rebuild the list only when it actually changed — a 1 Hz DOM rebuild would
 // cancel in-flight drag-and-drops and an open estimate editor mid-typing.
 let lastPlanSig = null;
 let dragId = null;
 let editingEstimate = false;
 let editingTitle = false;
+let editingRecurrence = false;
+
+/** A top-layer helper stays directly ABOVE its tag, never covering the input. */
+function eachHelper(input, tag) {
+  const helper = document.createElement('div');
+  helper.className = 'each-help';
+  helper.setAttribute('popover', 'manual');
+  helper.innerHTML = '<div>w|d|h|m|s|day|week <kbd>tab</kbd></div><div class="each-help-more">w = week; d = day; h = hour; m = min; s = sec<br><code>each: day</code> = <code>each: 1d</code><br><code>each: week</code> = <code>each: 1w</code></div>';
+  document.body.appendChild(helper);
+  const place = () => {
+    const rect = tag.getBoundingClientRect();
+    helper.style.left = `${Math.max(8, Math.min(innerWidth - helper.offsetWidth - 8, rect.left + rect.width / 2 - helper.offsetWidth / 2))}px`;
+    helper.style.top = `${rect.top - helper.offsetHeight - 8}px`;
+  };
+  let destroyed = false;
+  const show = () => {
+    if (destroyed || !helper.isConnected) return;
+    if (!helper.matches(':popover-open')) helper.showPopover();
+    const neededTop = helper.offsetHeight + 16;
+    const view = tag.closest('.view');
+    if (view && tag.getBoundingClientRect().top < neededTop) {
+      view.scrollTop = Math.max(0, view.scrollTop - (neededTop - tag.getBoundingClientRect().top));
+    }
+    place();
+  };
+  const hide = () => {
+    if (!destroyed && helper.isConnected && helper.matches(':popover-open')) helper.hidePopover();
+  };
+  input.addEventListener('focus', show);
+  input.addEventListener('blur', hide);
+  window.addEventListener('resize', place);
+  document.addEventListener('scroll', place, true);
+  return { show, destroy() {
+    if (destroyed) return;
+    hide();
+    destroyed = true;
+    input.removeEventListener('focus', show);
+    input.removeEventListener('blur', hide);
+    window.removeEventListener('resize', place);
+    document.removeEventListener('scroll', place, true);
+    helper.remove();
+  } };
+}
+
+/** Each tags have a draft editor and a confirmed, deletable text token. */
+function bindEachEditor(input, container, onFrequency = () => {}, onConfirm = () => {}, originalFrequency = null) {
+  let tag = null, frequency = null, tail = null, help = null, committed = null;
+  let settling = false, destroyed = false;
+  const fit = () => {
+    if (tag) input.style.width = `${Math.max(1, input.value.length + 1)}ch`;
+  };
+  const value = () => {
+    const label = frequency ? `each: ${frequency.value}` : Recurrence.format(committed);
+    return tag ? [input.value, label, tail.value].filter(Boolean).join(' ').trim() : input.value;
+  };
+  const focusEnd = (field) => {
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  };
+  const remove = (focus = true) => {
+    if (!tag) return;
+    settling = true;
+    const left = input.value, right = tail.value;
+    help?.destroy();
+    tag.remove(); tail.remove();
+    tag = frequency = tail = help = committed = null;
+    originalFrequency = null;
+    input.style.width = '';
+    input.value = [left, right].filter(Boolean).join(' ');
+    container.classList.remove('has-each');
+    onFrequency(null);
+    if (focus) {
+      input.focus();
+      input.setSelectionRange(left.length, left.length);
+    }
+    settling = false;
+  };
+  const confirm = (moveFocus = true) => {
+    if (!frequency || settling) return;
+    settling = true;
+    const parsed = Recurrence.parse(frequency.value);
+    if (parsed) committed = parsed;
+    if (committed) originalFrequency = committed;
+    help?.destroy(); help = null;
+    frequency = null;
+    if (!committed) {
+      settling = false;
+      remove(moveFocus);
+      return;
+    }
+    tag.replaceChildren(document.createTextNode(Recurrence.format(committed)));
+    tag.classList.remove('editing');
+    tag.tabIndex = 0;
+    tag.setAttribute('role', 'button');
+    onFrequency(committed);
+    if (parsed) onConfirm(committed);
+    if (moveFocus) focusEnd(tail);
+    settling = false;
+  };
+  const edit = (draft = null) => {
+    if (!tag || frequency) return;
+    tag.classList.add('editing');
+    tag.removeAttribute('tabindex');
+    const prefix = document.createElement('span');
+    prefix.textContent = 'each:';
+    frequency = document.createElement('input');
+    frequency.className = 'each-value';
+    frequency.setAttribute('aria-label', 'each:');
+    frequency.value = draft ?? `${committed.every}${committed.unit}`;
+    tag.replaceChildren(prefix, frequency);
+    const field = frequency;
+    help = eachHelper(field, tag);
+    const resize = () => {
+      field.style.width = `${Math.max(3, field.value.length + 1)}ch`;
+      onFrequency(Recurrence.parse(field.value) || committed);
+    };
+    field.addEventListener('input', resize);
+    field.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Escape' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault(); e.stopPropagation();
+        confirm(); // valid drafts apply; invalid drafts restore the previous token
+      } else if (e.key === 'Backspace' && field.selectionStart === 0 && field.selectionEnd === 0) {
+        e.preventDefault(); e.stopPropagation(); remove();
+      }
+      // Enter belongs to the surrounding task form, never to helper expansion.
+    });
+    field.addEventListener('blur', () => {
+      if (!destroyed && !settling) confirm(false);
+    });
+    resize();
+    field.focus(); help.show();
+  };
+  const convert = () => {
+    input.removeAttribute('aria-invalid');
+    if (tag) { fit(); return; }
+    const marker = /(?:^|\s)each:\s*/.exec(input.value);
+    if (!marker) return;
+    const rest = input.value.slice(marker.index + marker[0].length);
+    input.value = input.value.slice(0, marker.index).trimEnd();
+    committed = originalFrequency;
+    tag = document.createElement('span');
+    tag.className = 'each-tag';
+    tail = document.createElement('input');
+    tail.className = 'each-tail';
+    tail.setAttribute('aria-label', input.getAttribute('aria-label') || 'Task');
+    const match = /^(day|week|\d+ ?[wdhms])(?=$|\s)/.exec(rest);
+    tail.value = match ? rest.slice(match[0].length).trimStart() : '';
+    tail.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && tail.selectionStart === 0 && tail.selectionEnd === 0) {
+        e.preventDefault(); e.stopPropagation(); remove();
+      }
+    });
+    tag.addEventListener('click', (e) => { e.stopPropagation(); if (!frequency) edit(); });
+    tag.addEventListener('keydown', (e) => {
+      if (e.target !== tag) return;
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault(); e.stopPropagation(); remove();
+      } else if (e.key === ' ') {
+        e.preventDefault(); e.stopPropagation(); edit();
+      }
+    });
+    container.append(tag, tail);
+    container.classList.add('has-each');
+    fit();
+    edit(match ? match[1] : rest);
+  };
+  const deleteAhead = (e) => {
+    if (tag && e.key === 'Delete' && input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+      e.preventDefault(); e.stopPropagation(); remove();
+    }
+  };
+  const stopClick = (e) => e.stopPropagation();
+  input.addEventListener('input', convert);
+  input.addEventListener('keydown', deleteAhead);
+  container.addEventListener('click', stopClick);
+  return { value, convert, confirm, invalid() {
+    if (tag && !frequency) edit();
+    const field = frequency || input;
+    field.setAttribute('aria-invalid', 'true'); field.focus();
+  }, reset() {
+    remove(false);
+    input.value = ''; input.removeAttribute('aria-invalid');
+  }, destroy() {
+    destroyed = true;
+    help?.destroy();
+    input.removeEventListener('input', convert);
+    input.removeEventListener('keydown', deleteAhead);
+    container.removeEventListener('click', stopClick);
+  } };
+}
+
+function openRecurrenceEditor(task, button) {
+  if (editingRecurrence || editingTitle) return;
+  const rule = (snap.recurring || []).find((r) => r.id === task.recurringId);
+  if (!rule) return;
+  editingRecurrence = true;
+  const input = document.createElement('input');
+  input.className = 'each-value';
+  input.value = `${rule.every}${rule.unit}`;
+  button.replaceChildren(document.createTextNode('each: '), input);
+  const help = eachHelper(input, button);
+  let closed = false, closing = false;
+  const close = async (commit) => {
+    if (closed || closing) return;
+    // An invalid draft cancels instead of trapping focus inside the label.
+    if (commit && input.value.trim() && !Recurrence.parse(input.value)) commit = false;
+    closing = true;
+    try {
+      if (commit) {
+        const result = await shapeday.call('task:setRecurrence', { id: task.id, frequency: input.value });
+        if (!result.ok) { input.setAttribute('aria-invalid', 'true'); return; }
+      }
+      closed = true;
+      help.destroy();
+      editingRecurrence = false;
+      lastPlanSig = null;
+      renderPlan();
+    } catch {
+      input.setAttribute('aria-invalid', 'true');
+    } finally { closing = false; }
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.isComposing) return;
+    if (['Enter', 'Escape', 'Tab'].includes(e.key)) { e.preventDefault(); close(true); }
+  });
+  input.addEventListener('blur', () => close(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.focus(); input.select();
+  help.show();
+}
 
 /** Inline write-in for the headline: a textarea in place of the title. */
 function openTitleEditor(task, span) {
@@ -97,30 +326,65 @@ function openTitleEditor(task, span) {
   box.className = 'title-edit';
   box.rows = 1;
   box.value = task.title;
+  const wrap = document.createElement('span');
+  wrap.className = 'task-entry title-entry';
+  wrap.appendChild(box);
+  const existingRule = (snap.recurring || []).find((r) => r.id === task.recurringId);
+  let confirmedFrequency = null;
+  const editor = bindEachEditor(box, wrap, (frequency) => {
+    const chip = span.closest('.task')?.querySelector('.each-chip');
+    if (chip) chip.textContent = Recurrence.format(frequency || existingRule);
+    if (!frequency && confirmedFrequency) {
+      confirmedFrequency = null;
+      shapeday.call('task:setRecurrence', { id: task.id, frequency: '' });
+    }
+  }, (frequency) => {
+    confirmedFrequency = frequency;
+    shapeday.call('task:setRecurrence', { id: task.id, frequency: Recurrence.format(frequency) });
+  }, existingRule);
+  let closed = false, closing = false;
   const fit = () => {
     box.style.height = 'auto';
     box.style.height = `${Math.min(120, box.scrollHeight)}px`;
   };
-  const close = (commit) => {
-    editingTitle = false;
-    const v = box.value.replace(/\s+/g, ' ').trim();
-    if (commit && v && v !== task.title) {
-      shapeday.call('task:rename', { id: task.id, title: v });
-      span.textContent = v;
-      return; // the tick re-renders with the persisted title
-    }
-    span.textContent = task.title;
+  const close = async (commit) => {
+    if (closed || closing) return;
+    const v = editor.value().replace(/\s+/g, ' ').trim();
+    const parsed = Recurrence.extract(v);
+    if (commit && (!parsed.title || parsed.error)) { editor.invalid(); return; }
+    closing = true;
+    try {
+      if (commit && v !== task.title) {
+        const result = await shapeday.call('task:rename', { id: task.id, title: v });
+        if (!result.ok) { editor.invalid(); return; }
+      }
+      closed = true;
+      editor.destroy();
+      editingTitle = false;
+      span.textContent = task.title;
+      lastPlanSig = null;
+      renderPlan();
+    } catch {
+      editor.invalid();
+    } finally { closing = false; }
   };
   box.addEventListener('input', fit);
-  box.addEventListener('keydown', (e) => {
+  wrap.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter' && !e.shiftKey) close(true);
-    if (e.key === 'Escape') close(false);
+    if (e.isComposing) return;
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); close(true); }
+    if (e.key === 'Escape') { e.preventDefault(); close(true); }
   });
-  box.addEventListener('blur', () => close(true));
+  wrap.addEventListener('focusout', () => {
+    // Popover focus handling can leave relatedTarget null; inspect the settled
+    // focus after the helper has hidden, rather than committing between fields.
+    queueMicrotask(() => {
+      if (!wrap.contains(document.activeElement)) close(true);
+    });
+  });
   box.addEventListener('click', (e) => e.stopPropagation());
   span.textContent = '';
-  span.appendChild(box);
+  span.appendChild(wrap);
   box.focus();
   box.select();
   fit();
@@ -162,9 +426,11 @@ function planSignature(day) {
   return JSON.stringify([
     day.tasks.map((t) => [
       t.id, t.status, t.title, t.estimateMin, t.estEdited ? 1 : 0,
-      t.startedAt, t.finishedAt, TimeUtil.taskElapsedMin(t, snap.now),
+      t.startedAt, t.finishedAt, TimeUtil.taskElapsedMin(t, snap.now), t.recurringId,
+      Recurrence.format((snap.recurring || []).find((r) => r.id === t.recurringId)),
     ]),
     snap.settings.autoAdvance,
+    snap.settings.reflogOpen,
     day.etaReviewed ? 1 : 0,
     (day.reflog || []).length,
     (day.reflog || []).slice(-1)[0]?.at ?? 0,
@@ -177,10 +443,40 @@ function clearDropMarkers() {
   );
 }
 
+function frequencyChip(task, rule) {
+  const frequency = document.createElement('span');
+  frequency.className = 'each-chip';
+  frequency.tabIndex = 0;
+  frequency.setAttribute('role', 'button');
+  frequency.textContent = Recurrence.format(rule);
+  frequency.onclick = (e) => { e.stopPropagation(); openRecurrenceEditor(task, frequency); };
+  frequency.onkeydown = (e) => {
+    if (e.key === 'Enter' && e.target === frequency) { e.preventDefault(); openRecurrenceEditor(task, frequency); }
+  };
+  return frequency;
+}
+
+function syncFrequencyChips() {
+  for (const row of $$('#task-list li.task[data-task-id]')) {
+    // A draft preview belongs to its editor; don't overwrite it with the
+    // persisted value while typing. Confirmed shared rules update all copies.
+    if (row.querySelector('.title-entry .each-value, .each-chip input')) continue;
+    const task = snap.day.tasks.find((t) => t.id === row.dataset.taskId);
+    if (!task) continue;
+    const rule = (snap.recurring || []).find((r) => r.id === task.recurringId);
+    const chip = row.querySelector('.each-chip');
+    if (!rule) chip?.remove();
+    else if (chip) chip.textContent = Recurrence.format(rule);
+    else row.insertBefore(frequencyChip(task, rule), row.querySelector('.chip'));
+  }
+}
+
 function renderPlan() {
   const day = snap.day;
   const sig = planSignature(day);
-  if ((sig === lastPlanSig && !dragId) || editingEstimate || editingTitle) return;
+  renderRecurring();
+  if (editingTitle || editingRecurrence) syncFrequencyChips();
+  if ((sig === lastPlanSig && !dragId) || editingEstimate || editingTitle || editingRecurrence) return;
   lastPlanSig = sig;
 
   const list = $('#task-list');
@@ -194,13 +490,10 @@ function renderPlan() {
     list.appendChild(li);
   }
 
-  const HINT = snap.settings.autoAdvance !== false ? HINT_AUTO : HINT_MANUAL;
-
   for (const t of day.tasks) {
     const li = document.createElement('li');
     li.className = `task ${t.status}`;
-    li.title = `${t.title} — ${HINT[t.status]()}`;
-
+    li.dataset.taskId = t.id;
     const grip = document.createElement('span');
     grip.className = 'grip';
     grip.title = 'Drag to reorder';
@@ -280,17 +573,16 @@ function renderPlan() {
       chip.append(minus, mins, plus);
     }
 
-    const hint = document.createElement('span');
-    hint.className = 'hint';
-    hint.textContent = HINT[t.status]();
-
     const del = document.createElement('button');
     del.className = 'del';
     del.title = 'Delete — recorded in the reflog';
     del.textContent = '✕';
     del.onclick = (e) => { e.stopPropagation(); shapeday.call('task:delete', { id: t.id }); };
 
-    li.append(grip, dot, title, stamp, chip, hint, del);
+    li.append(grip, dot, del, title, stamp);
+    const rule = (snap.recurring || []).find((r) => r.id === t.recurringId);
+    if (rule) li.append(frequencyChip(t, rule));
+    li.append(chip);
 
     li.addEventListener('click', () => shapeday.call('task:click', { id: t.id }));
     li.addEventListener('contextmenu', (e) => {
@@ -314,6 +606,128 @@ function renderPlan() {
   $('#eta-banner').hidden = !(day.tasks.length > 0 && !day.etaReviewed);
   $('#plan-auto').checked = snap.settings.autoAdvance !== false;
   renderReflog(day);
+}
+
+const recurringPanel = $('#recurring-panel');
+const recurringButton = $('#btn-recurring');
+let recurringSignature = null;
+let recurringEstimateEditor = null;
+
+/** A rule duration is edited as a single whole-minute value. */
+function openRecurringEstimate(rule, label) {
+  if (recurringEstimateEditor) return;
+  const input = document.createElement('input');
+  input.className = 'recurring-minutes-edit';
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.pattern = '\\d+';
+  input.value = String(rule.estimateMin);
+  input.setAttribute('aria-label', T('sum.col.est'));
+  let closing = false;
+  const editor = {
+    id: rule.id,
+    async finish(commit) {
+      if (closing) return;
+      closing = true;
+      const minutes = Number(input.value.trim());
+      const valid = /^\d+$/.test(input.value.trim()) && Number.isInteger(minutes) && minutes >= 1 && minutes <= 480;
+      input.readOnly = true;
+      try {
+        if (commit && valid && minutes !== rule.estimateMin) {
+          await shapeday.call('recurring:setEstimate', { id: rule.id, minutes });
+        }
+      } catch (error) {
+        console.error('Recurring duration update failed:', error);
+      } finally {
+        if (recurringEstimateEditor === editor) recurringEstimateEditor = null;
+        recurringSignature = null;
+        renderRecurring();
+      }
+    },
+  };
+  recurringEstimateEditor = editor;
+  label.replaceChildren(input);
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.isComposing) return;
+    if (['Enter', 'Tab', 'Escape'].includes(e.key)) {
+      e.preventDefault(); editor.finish(true);
+    }
+  });
+  input.addEventListener('blur', () => editor.finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.focus(); input.select();
+}
+
+function positionRecurring() {
+  if (!recurringPanel.matches(':popover-open')) return;
+  const rect = recurringButton.getBoundingClientRect();
+  recurringPanel.style.left = `${Math.min(rect.left, innerWidth - recurringPanel.offsetWidth - 8)}px`;
+  recurringPanel.style.top = `${rect.bottom + 6}px`; // never expand above the clock, even at the viewport edge
+  recurringPanel.style.maxHeight = `${Math.max(0, innerHeight - rect.bottom - 14)}px`;
+}
+function closeRecurring() {
+  recurringEstimateEditor?.finish(true);
+  recurringPanel.hidePopover();
+  recurringButton.setAttribute('aria-expanded', 'false');
+}
+recurringButton.addEventListener('click', () => {
+  if (recurringPanel.matches(':popover-open')) closeRecurring();
+  else {
+    recurringPanel.showPopover();
+    recurringButton.setAttribute('aria-expanded', 'true');
+    positionRecurring();
+  }
+});
+document.addEventListener('click', (e) => {
+  if (!recurringPanel.contains(e.target) && !recurringButton.contains(e.target)) closeRecurring();
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeRecurring(); });
+document.addEventListener('scroll', positionRecurring, true);
+window.addEventListener('resize', positionRecurring);
+function renderRecurring() {
+  const rules = snap.recurring || [];
+  const count = $('#recurring-count');
+  count.hidden = !rules.length;
+  count.textContent = rules.length;
+  if (recurringEstimateEditor) {
+    if (rules.some((r) => r.id === recurringEstimateEditor.id)) return;
+    recurringEstimateEditor.finish(false);
+    return;
+  }
+  const signature = JSON.stringify(rules.map((r) => [r.id, r.title, r.every, r.unit, r.estimateMin]));
+  if (signature === recurringSignature) return;
+  recurringSignature = signature;
+  const list = $('#recurring-list');
+  list.replaceChildren();
+  for (const rule of rules) {
+    const row = document.createElement('li');
+    row.dataset.recurringId = rule.id;
+    const title = document.createElement('span');
+    title.textContent = rule.title;
+    const frequency = document.createElement('span');
+    frequency.className = 'recurring-frequency';
+    frequency.textContent = Recurrence.format(rule);
+    const minutes = document.createElement('span');
+    minutes.className = 'recurring-minutes';
+    minutes.textContent = `${rule.estimateMin}m`;
+    minutes.tabIndex = 0;
+    minutes.setAttribute('role', 'button');
+    minutes.setAttribute('aria-label', `${T('sum.col.est')}: ${rule.estimateMin}m`);
+    minutes.onclick = () => openRecurringEstimate(rule, minutes);
+    minutes.onkeydown = (e) => {
+      if (e.target === minutes && ['Enter', ' '].includes(e.key)) {
+        e.preventDefault(); openRecurringEstimate(rule, minutes);
+      }
+    };
+    const remove = document.createElement('button');
+    remove.className = 'icon-btn'; remove.textContent = '×';
+    remove.setAttribute('aria-label', T('reflog.deleted'));
+    remove.onclick = () => shapeday.call('recurring:delete', { id: rule.id });
+    row.append(title, frequency, minutes, remove);
+    list.appendChild(row);
+  }
+  positionRecurring();
 }
 
 const KIND_TEXT = { added: () => T('reflog.added'), deleted: () => T('reflog.deleted') };
@@ -363,6 +777,9 @@ let vizDate = null; // selected day for the Day chart; null = today
 let vizAnchor = null; // week/month navigation center; null = current period
 let vizData = null; // last fetched {scope, days, ...} for week/month
 let vizFetchedAt = 0;
+let vizFetchRequest = 0;
+let vizFetchPending = null;
+let weekPeriodKey = null;
 const VIZ_TTL = 15000; // refetch week/month data at most every 15s
 
 /** Switch the Day chart to an arbitrary date (from a week/month cell). */
@@ -378,6 +795,7 @@ async function renderViz(force) {
   if (!snap) return;
   const canvas = $('#timeline');
   const dayOnly = document.querySelectorAll('.viz-stats, .legend');
+  if (vizScope !== 'week') renderWeekSummaries(null);
   if (vizScope === 'day') {
     if (vizDate) {
       // another day's workload: fetch it; the header stats stay today's, so hide them
@@ -411,13 +829,27 @@ async function renderViz(force) {
   const wantAnchorKey = vizAnchor || snap.date;
   const anchorChanged = vizData?.anchorKey !== wantAnchorKey;
   if (force || anchorChanged || !vizData || vizData.scope !== vizScope || Date.now() - vizFetchedAt > VIZ_TTL) {
-    vizData = await shapeday.call('viz:days', { scope: vizScope, anchor: vizAnchor || undefined });
+    const scope = vizScope;
+    const anchor = vizAnchor;
+    // Every IPC call pumps a tick. Coalesce same-selection fetches so that
+    // that tick cannot supersede the very response the view is awaiting.
+    if (vizFetchPending?.scope === scope && vizFetchPending.anchor === anchor) return;
+    const request = ++vizFetchRequest;
+    const pending = { scope, anchor, request };
+    vizFetchPending = pending;
+    let data;
+    try {
+      data = await shapeday.call('viz:days', { scope, anchor: anchor || undefined });
+    } finally {
+      if (vizFetchPending === pending) vizFetchPending = null;
+    }
+    if (request !== vizFetchRequest || scope !== vizScope || anchor !== vizAnchor || !data || data.scope !== scope) return;
+    vizData = data;
     vizFetchedAt = Date.now();
-    if (!vizData || vizData.scope !== vizScope) return; // scope switched mid-fetch
   }
   if (vizScope === 'week') {
-    Timeline.renderWeek(canvas, vizData);
     renderWeekSummaries(vizData);
+    Timeline.renderWeek(canvas, vizData);
   } else {
     Timeline.renderMonth(canvas, vizData);
     renderWeekSummaries(null);
@@ -468,6 +900,7 @@ $('#viz-next').addEventListener('click', () => stepPeriod(1));
 
 $$('.viz-scopes button[data-viz]').forEach((b) =>
   b.addEventListener('click', () => {
+    if (vizScope !== b.dataset.viz) weekPeriodKey = null;
     vizScope = b.dataset.viz;
     vizAnchor = null; // a fresh scope starts at the current period
     $$('.viz-scopes button[data-viz]').forEach((x) => x.classList.toggle('active', x === b));
@@ -494,16 +927,14 @@ $('#timeline').addEventListener('mouseleave', (e) => {
   scheduleBubbleHide();
 });
 
-// week: click a task block for its details; click a column to open that day
+// week: only task blocks preview here; day navigation belongs to header buttons
 // month: click a day cell for its preview; the hint on its day title opens the chart
 $('#timeline').addEventListener('click', (e) => {
   if (vizScope !== 'week' && vizScope !== 'month') return;
   const hit = Timeline.hitTest($('#timeline'), e.clientX, e.clientY);
   if (hit?.kind === 'task') showWeekTaskBubble(hit, e);
-  else if (hit?.kind === 'day' && hit.date) {
-    if (vizScope === 'month') showMonthBubble(hit, e);
-    else selectDay(hit.date);
-  } else hideVizBubble();
+  else if (vizScope === 'month' && hit?.kind === 'day' && hit.date) showMonthBubble(hit, e);
+  else hideVizBubble();
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') hideVizBubble();
@@ -663,41 +1094,122 @@ function escapeHtml(x) {
   return String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-// ---------- week summary cells (per day) + weekly summary ----------
-function renderWeekSummaries(data) {
-  const box = $('#week-summaries');
-  if (!data || vizScope !== 'week') {
-    box.hidden = true;
-    return;
-  }
-  const byKey = new Map(data.days.map((d) => [d.date, d]));
-  const cells = [];
-  const cur = new Date(data.fromKey + 'T00:00:00');
-  let idx = 0;
-  while (keyOf(cur) <= data.toKey) {
-    const date = keyOf(cur);
-    const d = byKey.get(date);
-    const text = d?.summary || '';
-    cells.push(
-      `<div class="cell ${text ? '' : 'empty'}" data-date="${date}">` +
-        `<div class="day-label">${DOW[idx]()} ${date.slice(8)}</div>` +
-        (text ? escapeHtml(text.slice(0, 120)) : escapeHtml(T('viz.no_summary'))) +
-        `</div>`
-    );
-    cur.setDate(cur.getDate() + 1);
-    idx++;
-  }
-  const week = data.periodSummary
-    ? `<b>${T('viz.week_summary')}</b><br>${escapeHtml(data.periodSummary.slice(0, 160))}`
-    : T('viz.no_week_summary');
-  box.innerHTML = `<div class="cells">${cells.join('')}</div><div class="week-cell ${data.periodSummary ? '' : 'empty'}">${week}</div>`;
-  box.hidden = false;
+// ---------- week header + persistent, vertically expandable summary rows ----------
+function setWeekRowExpanded(row, expanded) {
+  row.dataset.expanded = String(expanded);
+  const controls = row.classList.contains('cells') ? row.querySelectorAll('.cell') : [row];
+  controls.forEach((cell) => cell.setAttribute('aria-expanded', String(expanded)));
+}
 
-  // every cell opens its day's chart — same gesture as clicking the column
-  box.querySelectorAll('.cell').forEach((cell) => {
-    cell.addEventListener('click', () => selectDay(cell.dataset.date));
+function bindWeekRowToggle(cell, row) {
+  cell.addEventListener('click', () => {
+    hideVizBubble();
+    setWeekRowExpanded(row, row.dataset.expanded !== 'true');
+  });
+  cell.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    cell.click();
   });
 }
+
+function renderWeekSummaries(data) {
+  const box = $('#week-summaries');
+  const header = $('#week-header');
+  if (!data || vizScope !== 'week') {
+    box.hidden = true;
+    header.hidden = true;
+    weekPeriodKey = null;
+    return;
+  }
+  const periodKey = `${data.fromKey}:${data.toKey}`;
+  const dates = [];
+  const cur = new Date(data.fromKey + 'T00:00:00');
+  while (keyOf(cur) <= data.toKey) {
+    dates.push(keyOf(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  // Only a different period/scope rebuilds the nodes. Ticks, refetches and
+  // locale updates preserve focus, independent scroll positions and row state.
+  if (weekPeriodKey !== periodKey) {
+    weekPeriodKey = periodKey;
+    box.dataset.period = periodKey;
+    header.replaceChildren();
+    const row = document.createElement('div');
+    row.className = 'cells';
+    row.id = 'week-summary-row';
+    dates.forEach((date) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'week-day';
+      button.dataset.date = date;
+      button.addEventListener('click', () => selectDay(date));
+      header.appendChild(button);
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.date = date;
+      cell.tabIndex = 0;
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('aria-controls', row.id);
+      bindWeekRowToggle(cell, row);
+      row.appendChild(cell);
+    });
+    const week = document.createElement('div');
+    week.className = 'week-cell';
+    week.id = 'week-period-summary';
+    week.tabIndex = 0;
+    week.setAttribute('role', 'button');
+    week.setAttribute('aria-controls', week.id);
+    week.append(document.createElement('b'), document.createElement('br'), document.createElement('span'));
+    bindWeekRowToggle(week, week);
+    box.replaceChildren(row, week);
+    setWeekRowExpanded(row, false);
+    setWeekRowExpanded(week, false);
+  }
+  const byKey = new Map(data.days.map((d) => [d.date, d]));
+  const cells = box.querySelectorAll('.cell');
+  header.querySelectorAll('.week-day').forEach((button, idx) => {
+    const date = button.dataset.date;
+    const label = `${DOW[(new Date(date + 'T00:00:00').getDay() + 6) % 7]()} ${Number(date.slice(8))}`;
+    if (button.textContent !== label) button.textContent = label;
+    button.setAttribute('aria-label', `${label}, ${date}`);
+    if (date === data.todayKey) button.setAttribute('aria-current', 'date');
+    else button.removeAttribute('aria-current');
+    const text = byKey.get(date)?.summary || '';
+    const cell = cells[idx];
+    const content = text || T('viz.no_summary');
+    if (cell.textContent !== content) cell.textContent = content;
+    cell.classList.toggle('empty', !text);
+    cell.setAttribute('aria-label', `${label}: ${content}`);
+  });
+  const week = box.querySelector('.week-cell');
+  const title = week.querySelector('b');
+  const content = week.querySelector('span');
+  const text = data.periodSummary || T('viz.no_week_summary');
+  const label = T('viz.week_summary');
+  if (title.textContent !== label) title.textContent = label;
+  title.hidden = !data.periodSummary;
+  week.querySelector('br').hidden = !data.periodSummary;
+  if (content.textContent !== text) content.textContent = text;
+  week.classList.toggle('empty', !data.periodSummary);
+  week.setAttribute('aria-label', `${label}: ${text}`);
+  box.hidden = false;
+  header.hidden = false;
+}
+
+// Container resizing (including revealing the visualize tab) repaints the
+// week using its current CSS width, without fetching or replacing summary DOM.
+let weekResizeFrame = null;
+const weekResizeObserver = new ResizeObserver(() => {
+  if (weekResizeFrame !== null) cancelAnimationFrame(weekResizeFrame);
+  weekResizeFrame = requestAnimationFrame(() => {
+    weekResizeFrame = null;
+    if (vizScope === 'week' && vizData?.scope === 'week' && !$('#week-header').hidden && $('#timeline').clientWidth > 0) {
+      Timeline.renderWeek($('#timeline'), vizData);
+    }
+  });
+});
+weekResizeObserver.observe(document.querySelector('.viz-wrap'));
 
 function keyOf(d) {
   const p = (x) => String(x).padStart(2, '0');
@@ -705,19 +1217,97 @@ function keyOf(d) {
 }
 
 // ---------- summarize ----------
+let sumDate = null; // null follows today until the user selects a date
+let sumRequest = 0;
+const sumReports = new Map(); // scope:periodKey → last AI report, never scope alone
+const sumRegenerating = new Set();
+const sumToday = () => keyOf(new Date(snap?.now ?? Date.now()));
+const sumSelectedDate = () => sumDate || sumToday();
+
+function sumPeriodKey(scope, date) {
+  if (scope === 'day') return date;
+  if (scope === 'month') return date.slice(0, 7);
+  if (scope === 'year') return date.slice(0, 4);
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 3 - (d.getUTCDay() + 6) % 7);
+  const year = d.getUTCFullYear();
+  const week = Math.ceil(((d - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+function sumSelectionKey(scope = sumScope, date = sumSelectedDate()) {
+  return `${scope}:${sumPeriodKey(scope, date)}`;
+}
+
+function sumEventMatches(data) {
+  return data?.scope === sumScope && typeof data.date === 'string' &&
+    data.periodKey === sumPeriodKey(sumScope, sumSelectedDate()) &&
+    data.periodKey === sumPeriodKey(data.scope, data.date);
+}
+
+function syncSumNavigation() {
+  const today = sumToday();
+  $('#sum-date').max = today;
+  $('#sum-date').value = sumSelectedDate();
+  $('#sum-next').disabled = sumPeriodKey(sumScope, sumSelectedDate()) >= sumPeriodKey(sumScope, today);
+  $('#btn-resummarize').disabled = sumRegenerating.has(sumSelectionKey());
+}
+
+function changeSumSelection(scope, date) {
+  sumScope = scope;
+  sumDate = date;
+  sumError = null;
+  $$('.sum-scopes button[data-scope]').forEach((b) => b.classList.toggle('active', b.dataset.scope === scope));
+  for (const id of ['#sum-metrics', '#sum-issues', '#sum-detail']) $(id).replaceChildren();
+  loadReport(); // increments the token before any old request can render
+}
+
+function stepSumDate(direction) {
+  const d = new Date(sumSelectedDate() + 'T00:00:00');
+  if (sumScope === 'day' || sumScope === 'week') {
+    d.setDate(d.getDate() + direction * (sumScope === 'week' ? 7 : 1));
+  } else {
+    // Clamp month-end / leap-day instead of overflowing into another period.
+    const day = d.getDate();
+    d.setDate(1);
+    if (sumScope === 'month') d.setMonth(d.getMonth() + direction);
+    else d.setFullYear(d.getFullYear() + direction);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  }
+  const date = keyOf(d);
+  changeSumSelection(sumScope, date > sumToday() ? sumToday() : date);
+}
+
+$('#sum-prev').addEventListener('click', () => stepSumDate(-1));
+$('#sum-next').addEventListener('click', () => stepSumDate(1));
+$('#sum-date').addEventListener('change', (e) => {
+  const date = e.target.value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || keyOf(new Date(date + 'T00:00:00')) !== date || date > sumToday()) {
+    syncSumNavigation();
+    return;
+  }
+  changeSumSelection(sumScope, date);
+});
 $('#btn-resummarize').addEventListener('click', async () => {
-  const st = $('#btn-resummarize');
-  st.disabled = true;
-  await shapeday.call('report:regen', { scope: sumScope });
-  st.disabled = false;
-  loadReport();
+  const scope = sumScope, date = sumSelectedDate();
+  const key = sumSelectionKey(scope, date);
+  if (sumRegenerating.has(key)) return;
+  sumError = null;
+  sumRegenerating.add(key);
+  syncSumNavigation();
+  try {
+    const r = await shapeday.call('report:regen', { scope, date });
+    if (key === sumSelectionKey() && r?.error) sumError = r.error;
+  } catch (e) {
+    if (key === sumSelectionKey()) sumError = String(e.message || e);
+  } finally {
+    sumRegenerating.delete(key);
+    syncSumNavigation();
+    if (scope === sumScope && date === sumSelectedDate()) loadReport();
+  }
 });
 $$('.sum-scopes button[data-scope]').forEach((b) =>
-  b.addEventListener('click', () => {
-    sumScope = b.dataset.scope;
-    $$('.sum-scopes button').forEach((x) => x.classList.toggle('active', x === b));
-    loadReport();
-  })
+  b.addEventListener('click', () => changeSumSelection(b.dataset.scope, sumDate))
 );
 
 const METRIC_LABELS = {
@@ -735,8 +1325,22 @@ const METRIC_LABELS = {
 };
 
 async function loadReport() {
-  const r = await shapeday.call('report:get', { scope: sumScope });
-  if (!r || r.error) return;
+  const request = ++sumRequest;
+  const scope = sumScope, date = sumSelectedDate();
+  syncSumNavigation();
+  let r;
+  try {
+    r = await shapeday.call('report:get', { scope, date });
+  } catch (e) {
+    r = { error: String(e.message || e) };
+  }
+  if (request !== sumRequest || scope !== sumScope || date !== sumSelectedDate()) return;
+  if (!r || r.error) {
+    sumError = r?.error || 'No report';
+    $('#sum-issues').textContent = T('sum.src.error', { err: sumError });
+    return;
+  }
+  if (r.scope !== scope || r.date !== date || r.periodKey !== sumPeriodKey(scope, date)) return;
 
   // the regen affordance exists only in AI mode with a configured endpoint
   const regenBtn = $('#btn-resummarize');
@@ -763,8 +1367,15 @@ async function loadReport() {
   const issues = $('#sum-issues');
   issues.innerHTML = '';
   const aiMode = snap.settings.summaryMode === 'ai' && llmConfigured(snap.settings);
-  const ai = aiMode ? r.llm || aiCache[sumScope] : null;
-  if (ai) aiCache[sumScope] = ai;
+  const cacheKey = `${scope}:${r.periodKey}`;
+  const persisted = r.persisted ? {
+    headline: r.persisted.recap || '',
+    issues: (r.persisted.suggestions || []).map((i) => ({
+      sev: 'low', text: i.content || '', about: i.about || '', fix: '',
+    })),
+  } : null;
+  if (aiMode && r.llm) sumReports.set(cacheKey, r.llm);
+  const ai = aiMode ? r.llm || persisted || sumReports.get(cacheKey) : null;
 
   const headline = document.createElement('div');
   headline.className = 'sum-headline';
@@ -787,7 +1398,7 @@ async function loadReport() {
         ? T('sum.src.thinking')
         : T('sum.src.template');
   issues.appendChild(source);
-  const list = ai ? ai.issues : r.issues;
+  const list = (ai ? ai.issues : r.issues) || [];
   for (const i of list) {
     const el = document.createElement('div');
     el.className = 'issue';
@@ -799,17 +1410,22 @@ async function loadReport() {
 
   const detail = $('#sum-detail');
   detail.innerHTML = '';
-  if (sumScope === 'day' && snap.day.tasks.length) {
+  const day = r.day;
+  const midnight = new Date(date + 'T00:00:00');
+  midnight.setDate(midnight.getDate() + 1);
+  const detailNow = date < sumToday()
+    ? Math.min(snap.now, day?.lastSeenAt ?? midnight.getTime()) : snap.now;
+  if (scope === 'day' && day?.tasks.length) {
     const tbl = document.createElement('table');
     tbl.className = 'day-table';
     tbl.innerHTML = `<tr><th>${T('sum.col.task')}</th><th>${T('sum.col.status')}</th><th>${T('sum.col.est')}</th><th>${T('sum.col.actual')}</th><th>${T('sum.col.finished')}</th></tr>`;
-    for (const t of snap.day.tasks) {
+    for (const t of day.tasks) {
       const tr = document.createElement('tr');
       const cells = [
         t.title,
         T('status.' + t.status),
         fmtMin(t.estimateMin),
-        fmtMin(TimeUtil.taskElapsedMin(t, snap.now)),
+        fmtMin(TimeUtil.taskElapsedMin(t, detailNow)),
         t.finishedAt ? fmtClock(t.finishedAt) : '—',
       ];
       cells.forEach((c, idx) => {
@@ -905,11 +1521,10 @@ $('#set-ow-opacity').addEventListener('input', (e) => {
 // ---------- reflog: unfolded by default, toggleable ----------
 let reflogPref = null; // applied on first render, then only when the setting changes
 const reflogOpenInput = $('#reflog-open');
-reflogOpenInput.addEventListener('click', (e) => e.stopPropagation()); // don't fold the details
+reflogOpenInput.closest('label').addEventListener('click', (e) => e.stopPropagation()); // glyph clicks must not fold the details
 reflogOpenInput.addEventListener('change', (e) => {
   shapeday.call('settings:set', { reflogOpen: e.target.checked });
   reflogPref = e.target.checked;
-  $('#reflog').open = e.target.checked;
 });
 
 // ---------- LLM (OpenAI-compatible chat/completions; user-configured) ----------
@@ -945,9 +1560,11 @@ shapeday.onEvent((ev) => {
   }
   if (ev.type === 'llm:status' && !ev.data.ok) {
     if (ev.data.where === 'report') {
-      sumError = ev.data.error; // shown where it happened: the Summarize view
-      if (currentView === 'sum') loadReport();
-      return;
+      if (sumEventMatches(ev.data)) {
+        sumError = ev.data.error;
+        if (currentView === 'sum') loadReport();
+      }
+      return; // a different period's error must not leak into ETA status either
     }
     if (snap && snap.day.tasks.length) $('#eta-banner').hidden = false;
     const st = $('#eta-llm-status');
@@ -956,9 +1573,10 @@ shapeday.onEvent((ev) => {
       : T('eta.unreachable', { where: ev.data.where, error: ev.data.error });
     st.className = 'llm-status err';
   }
-  if (ev.type === 'llm:report' && currentView === 'sum' && ev.data.scope === sumScope) {
+  if (ev.type === 'llm:report' && sumEventMatches(ev.data)) {
     sumError = null;
-    loadReport(); // merge the AI issues into the view
+    if (ev.data.report) sumReports.set(sumSelectionKey(), ev.data.report);
+    if (currentView === 'sum') loadReport();
   }
 });
 
@@ -1018,6 +1636,18 @@ function renderSettings() {
 
 // ---------- settings dropdown: click outside (or Esc) to close ----------
 const settingsEl = document.querySelector('details.settings');
+const settingsPop = settingsEl.querySelector('.settings-pop');
+function positionSettings() {
+  if (!settingsEl.open) return;
+  const gear = settingsEl.querySelector('summary').getBoundingClientRect();
+  const top = Math.max(16, Math.min(gear.bottom + 8, window.innerHeight - 16));
+  const right = Math.max(16, Math.min(window.innerWidth - gear.right, window.innerWidth - 16));
+  settingsPop.style.setProperty('--settings-top', `${top}px`);
+  settingsPop.style.setProperty('--settings-right', `${right}px`);
+}
+settingsEl.addEventListener('toggle', positionSettings);
+window.addEventListener('resize', positionSettings);
+positionSettings();
 document.addEventListener('click', (e) => {
   if (settingsEl.open && !settingsEl.contains(e.target)) settingsEl.open = false;
 });
@@ -1032,7 +1662,7 @@ function onTick(s) {
   if (wanted !== locale) {
     locale = wanted;
     applyLocale();
-    lastPlanSig = null; // hints are baked into rows; rebuild under the new language
+    lastPlanSig = null; // localized row content must rebuild under the new language
   }
   const d = new Date(s.now);
   $('#hd-day').textContent = d.toLocaleDateString(INTL_TAG[locale] ?? 'en-US', {
@@ -1044,6 +1674,10 @@ function onTick(s) {
   renderSettings();
   if (currentView === 'viz') renderViz();
 }
-shapeday.call('i18n:get').then((r) => I18N.setCatalogs(r.catalogs)); // catalogs come from YAML via the main process
+shapeday.call('i18n:get').then((r) => {
+  I18N.setCatalogs(r.catalogs); // catalogs come from YAML via the main process
+  applyLocale();
+  lastPlanSig = null;
+});
 shapeday.onTick(onTick);
 shapeday.call('day:get').then(onTick);

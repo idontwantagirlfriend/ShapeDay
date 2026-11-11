@@ -4,20 +4,15 @@
 tabs.plan: "Plan"
 tabs.viz: "Visualize"
 tabs.sum: "Summarize"
+shell.settings: "Settings"
 
-# --- plan — input, list rows, hints ---
+# --- plan — input, list rows, controls ---
 plan.input_ph: "What's due today?"
 plan.add_title: "List it"
 plan.empty: "List what's due. Everything starts red — click as you go."
 plan.reset: "Reset statuses"
 plan.clear: "Clear the day"
 plan.auto: "Auto-advance"
-plan.hint.red: "click → make current"
-plan.hint.yellow_auto: "current · click → finish"
-plan.hint.yellow: "click → finish"
-plan.hint.paused: "on break · click → resume"
-plan.hint.green: "click → reopen"
-plan.hint.white: "click → revive (unfinished)"
 plan.paused_stamp: "⏸ on break · {dur} so far"
 
 # --- eta banner ---
@@ -118,6 +113,8 @@ metric.longestNoBreakMin: "longest stretch"
 
 # --- toast — task-finished / break notice ---
 toast.done: "Task done."
+toast.manual: "Time for a break?"
+toast.manual_text: "Take {n} minutes to recharge. Your work can wait."
 toast.on_break: "On break"
 toast.take_a: "Take a"
 toast.min_break: "-min break"
@@ -140,6 +137,7 @@ eval.keep: "Keep it up."
 eval.extend: "Extend the ETA."
 
 # --- bar — the top strip / floater ---
+bar.manual_break: "Take a break"
 bar.no_task: "no task on"
 bar.on_break: "on break"
 bar.left_pace: "{t} left"

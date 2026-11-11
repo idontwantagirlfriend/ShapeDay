@@ -4,20 +4,15 @@
 tabs.plan: "規劃"
 tabs.viz: "圖表"
 tabs.sum: "摘要"
+shell.settings: "設定"
 
-# --- 規劃 — 輸入、任務清單、操作提示 ---
+# --- 規劃 — 輸入、任務清單、控制項 ---
 plan.input_ph: "今天有哪些事要做？"
 plan.add_title: "新增任務"
 plan.empty: "把今天要做的事列下來。紅色代表還沒開始，點一下就開工。"
 plan.reset: "重設所有任務狀態"
 plan.clear: "清空今天的任務"
 plan.auto: "自動接續下一項"
-plan.hint.red: "點一下開始"
-plan.hint.yellow_auto: "進行中 · 點一下完成"
-plan.hint.yellow: "點一下標記為完成"
-plan.hint.paused: "休息中 · 點一下繼續"
-plan.hint.green: "點一下重新開始"
-plan.hint.white: "點一下恢復為未完成"
 plan.paused_stamp: "⏸ 休息中 · 已休息{dur}"
 
 # --- 預估時間提示 ---
@@ -118,6 +113,8 @@ metric.longestNoBreakMin: "最長連續工作時間"
 
 # --- 通知 — 任務完成與休息提醒 ---
 toast.done: "完成一件了！"
+toast.manual: "休息一下？"
+toast.manual_text: "歇{n}分鐘，喘口氣。工作可以等一下。"
 toast.on_break: "休息中"
 toast.take_a: "休息"
 toast.min_break: "分鐘"
@@ -140,6 +137,7 @@ eval.keep: "照這個步調就好。"
 eval.extend: "把預估時間拉長一點吧。"
 
 # --- 狀態列 — 頂端列與浮動視窗 ---
+bar.manual_break: "休息一下"
 bar.no_task: "目前沒有進行中的任務"
 bar.on_break: "休息中"
 bar.left_pace: "還剩{t}"

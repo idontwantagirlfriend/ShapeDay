@@ -24,6 +24,10 @@ for (const loc of ['en-us', 'zh-hans', 'zh-hant']) {
 }
 I18N.setCatalogs(CATALOGS);
 
+// Harnesses must never clear tasks or rewrite prompts in the user's real profile.
+if ((process.env.SHAPEDAY_E2E || process.env.SHAPEDAY_SHOT) && process.env.SHAPEDAY_TEST_USER_DATA) {
+  app.setPath('userData', process.env.SHAPEDAY_TEST_USER_DATA);
+}
 const store = Store.open(path.join(app.getPath('userData'), 'shapeday.json'));
 
 // Editable LLM prompts. Bundled defaults (prompts/ in the package) seed the
@@ -251,6 +255,7 @@ function syncOverlay(snap) {
 }
 
 function pump() {
+  if (isQuitting) return;
   const { snapshot: snap, events } = state.tick();
   windows.sendToAll('shapeday:tick', snap);
   for (const ev of events) {
@@ -495,6 +500,6 @@ if (!gotLock) {
   app.on('before-quit', () => {
     isQuitting = true;
     globalShortcut.unregisterAll();
-    store.flush();
+    state.shutdown();
   });
 }

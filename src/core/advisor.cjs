@@ -21,8 +21,17 @@
     return h > 0 ? `${h}h ${min % 60}m` : `${Math.round(min)}m`;
   }
 
-  /** Flatten completed tasks across days with per-day overwork minutes. */
-  function scan(days, settings) {
+  /** Actual work is the sum of recorded segments, regardless of status. */
+  function actualWorkMinutes(task, nowMs = Date.now()) {
+    return (task.worked || []).reduce((sum, seg) => {
+      if (!Number.isFinite(seg.start)) return sum;
+      const end = seg.end ?? nowMs;
+      return Number.isFinite(end) ? sum + Math.max(0, end - seg.start) / MIN : sum;
+    }, 0);
+  }
+
+  /** Flatten tasks across days with per-day overwork minutes. */
+  function scan(days, settings, nowMs = Date.now()) {
     const out = {
       nDays: 0,
       done: 0,
@@ -40,28 +49,55 @@
     for (const day of days || []) {
       if (!day || !day.tasks || day.tasks.length === 0) continue;
       out.nDays++;
+      const hours = day.hours || settings;
       const bounds = TimeUtil
-        ? TimeUtil.workBounds(day.date, settings.workStart, settings.workEnd)
+        ? TimeUtil.workBounds(day.date, hours.workStart, hours.workEnd)
         : null;
-      let lastEnd = bounds ? bounds.start : null;
-      let dayNoBreak = 0;
+      const midnight = new Date(day.date + 'T00:00:00');
+      midnight.setDate(midnight.getDate() + 1);
+      const endRef = day.date < TimeUtil.todayKey()
+        ? Math.min(nowMs, day.lastSeenAt ?? midnight.getTime()) : nowMs;
+      const workSegments = [];
       for (const t of day.tasks) {
-        out.plannedMin += t.estimateMin;
-        const act = (t.worked || []).reduce((s, seg) => s + ((seg.end ?? Date.now()) - seg.start), 0) / MIN;
+        out.plannedMin += Number(t.estimateMin) || 0;
+        const act = actualWorkMinutes(t, endRef);
+        out.actualMin += act;
         if (t.status === 'green') {
           out.done++;
-          out.actualMin += act;
-          if (t.finishedAt && t.startedAt) out.estPairs.push({ title: t.title, est: t.estimateMin, act });
+          if ((t.worked || []).length) out.estPairs.push({ title: t.title, est: t.estimateMin, act });
         }
         if (t.status === 'white') out.skipped++;
         out.taskTotal++;
-        const f = t.finishedAt;
-        if (f && lastEnd != null) {
-          dayNoBreak = Math.max(dayNoBreak, (f - lastEnd) / MIN);
-          lastEnd = f;
+        for (const seg of t.worked || []) {
+          const end = seg.end ?? endRef;
+          if (Number.isFinite(seg.start) && Number.isFinite(end) && end > seg.start) {
+            workSegments.push({ start: seg.start, end });
+          }
         }
       }
-      out.longestNoBreak = Math.max(out.longestNoBreak, dayNoBreak);
+      // A late finish alone is not a full shift of uninterrupted work.
+      // Merge contiguous/overlapping recorded work, splitting at real breaks.
+      const pieces = workSegments.flatMap((seg) => {
+        let parts = [seg];
+        for (const brk of day.breaks || []) {
+          const end = brk.end ?? Math.min(endRef, brk.start + (brk.plannedMin || 10) * MIN);
+          if (!(end > brk.start)) continue;
+          parts = parts.flatMap((part) => {
+            if (end <= part.start || brk.start >= part.end) return [part];
+            const split = [];
+            if (brk.start > part.start) split.push({ start: part.start, end: brk.start });
+            if (end < part.end) split.push({ start: end, end: part.end });
+            return split;
+          });
+        }
+        return parts;
+      }).sort((a, b) => a.start - b.start);
+      let stretch = null;
+      for (const seg of pieces) {
+        if (stretch && seg.start <= stretch.end) stretch.end = Math.max(stretch.end, seg.end);
+        else stretch = { ...seg };
+        out.longestNoBreak = Math.max(out.longestNoBreak, (stretch.end - stretch.start) / MIN);
+      }
       for (const b of day.breaks || []) {
         out.breaks++;
         out.breakMin += ((b.end ?? b.start + (b.plannedMin || 10) * MIN) - b.start) / MIN;
@@ -90,8 +126,8 @@
    * days: array of day objects (already scoped: [today] / week / 30d).
    * Returns {metrics, issues: [{sev, text, fix}]} — one line each.
    */
-  function report(days, settings) {
-    const s = scan(days, settings);
+  function report(days, settings, nowMs = Date.now()) {
+    const s = scan(days, settings, nowMs);
     const issues = [];
 
     if (s.overworkDays > 0) {
@@ -128,7 +164,7 @@
     if (s.done > 0 && s.breaks === 0 && s.actualMin > 240) {
       issues.push({
         sev: 'med',
-        text: `No breaks across ${fmtHM(s.actualMin)} of completed work.`,
+        text: `No breaks across ${fmtHM(s.actualMin)} of recorded work.`,
         fix: 'Accept the post-task break proposal at least every ~90 minutes.',
       });
     }
@@ -155,5 +191,5 @@
     };
   }
 
-  return { report, scan, estBias };
+  return { report, scan, estBias, actualWorkMinutes };
 });

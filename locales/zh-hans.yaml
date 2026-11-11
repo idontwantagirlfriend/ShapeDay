@@ -4,20 +4,15 @@
 tabs.plan: "计划"
 tabs.viz: "图表"
 tabs.sum: "摘要"
+shell.settings: "设置"
 
-# --- plan — input, list rows, hints ---
+# --- plan — input, list rows, controls ---
 plan.input_ph: "有什么事？"
 plan.add_title: "添加新任务"
 plan.empty: "太好了，今天没事……吗？"
 plan.reset: "重置所有任务状态"
 plan.clear: "清空所有任务"
 plan.auto: "自动进行下一个任务"
-plan.hint.red: "点击立即开始"
-plan.hint.yellow_auto: "进行中 · 点击以完成"
-plan.hint.yellow: "点击设置为完成"
-plan.hint.paused: "暂停中 · 点击以继续"
-plan.hint.green: "点击重置为进行中"
-plan.hint.white: "点击恢复"
 plan.paused_stamp: "⏸ 休息中 · 已进行{dur}"
 
 # --- eta banner ---
@@ -118,6 +113,8 @@ metric.longestNoBreakMin: "最长无休工作时间"
 
 # --- toast — task-finished / break notice ---
 toast.done: "告一段落！"
+toast.manual: "休息一下？"
+toast.manual_text: "歇{n}分钟，缓口气。工作可以等一会儿。"
 toast.on_break: "休息中"
 toast.take_a: "休息"
 toast.min_break: "分钟"
@@ -140,6 +137,7 @@ eval.keep: "就这么办。"
 eval.extend: "去延长任务时间。"
 
 # --- bar — the top strip / floater ---
+bar.manual_break: "休息一下"
 bar.no_task: "没活了"
 bar.on_break: "休息中"
 bar.left_pace: "剩余{t}"

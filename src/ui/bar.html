@@ -7,9 +7,10 @@
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
-  <!-- top style: full-width strip, click-through except the center grip -->
+  <!-- top style: full-width strip, click-through except the grip and break action -->
   <div class="topbar" id="topbar" hidden>
     <div class="strip-fill" id="strip-fill"></div>
+    <button class="manual-break" id="top-break" data-i18n-aria="bar.manual_break" aria-label="Take a break"><span class="snooze-glyph" aria-hidden="true">💤</span></button>
     <span class="dot" id="top-dot"></span>
     <span class="headline" id="top-headline">no task on</span>
     <span class="time" id="top-time"></span>
@@ -18,6 +19,7 @@
 
   <!-- floater style: the rounded capsule only — headline, clock, grip -->
   <div class="floater" id="floater" hidden>
+    <button class="manual-break" id="fl-break" data-i18n-aria="bar.manual_break" aria-label="Take a break"><span class="snooze-glyph" aria-hidden="true">💤</span></button>
     <span class="dot" id="fl-dot"></span>
     <span class="headline" id="fl-headline">no task on</span>
     <span class="clock" id="fl-clock"></span>

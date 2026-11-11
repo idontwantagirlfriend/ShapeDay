@@ -21,6 +21,9 @@ async function run({ app, getMainWin, state, store, windows }) {
 
   await win.webContents.executeJavaScript(`
     window.__events = [];
+    window.__uiErrors = [];
+    window.addEventListener('error', e => window.__uiErrors.push(e.message));
+    window.addEventListener('unhandledrejection', e => window.__uiErrors.push(String(e.reason)));
     shapeday.onEvent(e => window.__events.push(e));
     true
   `);
@@ -291,26 +294,75 @@ async function run({ app, getMainWin, state, store, windows }) {
   const ui = await win.webContents.executeJavaScript(`(() => {
     const box = document.getElementById('reflog');
     const slider = document.getElementById('set-ow-opacity');
+    const gear = document.querySelector('details.settings summary');
+    const header = document.querySelector('header');
+    const arrow = document.querySelector('.auto-advance');
+    const lock = document.querySelector('.reflog-lock');
+    const wasOpen = box.open;
+    const lockVisible = !!lock && getComputedStyle(lock).display !== 'none';
+    box.open = false;
+    const lockHiddenWhenFolded = !!lock && getComputedStyle(lock).display === 'none';
+    box.open = wasOpen;
+    const rows = [...document.querySelectorAll('li.task')].filter((row) => row.querySelector('.chip'));
     return {
       reflogOpen: box.hidden ? null : box.open,
       hasOpacity: !!slider,
-      gear: document.querySelector('details.settings summary').textContent.trim(),
+      gearSvg: !!gear.querySelector('svg path') && !!gear.querySelector('svg circle') && !gear.textContent.trim(),
+      brandLogoOnly: !!header.querySelector('img.brand-logo') && !header.querySelector('.brand') && !header.textContent.includes('ShapeDay'),
+      minutesRightmost: rows.length > 0 && rows.every((row) => {
+        const chip = row.querySelector('.chip');
+        const bounds = chip.getBoundingClientRect();
+        return row.lastElementChild === chip && [...row.children].every((el) =>
+          el === chip || el.getBoundingClientRect().right <= bounds.left + 1);
+      }),
+      arrow: !!arrow?.querySelector('svg path') && !!arrow.querySelector('#plan-auto')?.checked && !arrow.textContent.trim() && !!arrow.dataset.help,
+      lock: !!lock?.querySelector('svg rect') && !!lock.querySelector('svg path') && !!lock.querySelector('#reflog-open')?.checked && !lock.textContent.trim(),
+      lockVisible, lockHiddenWhenFolded,
     };
   })()`);
   check('reflog unfolded by default', ui.reflogOpen === true, JSON.stringify(ui));
-  check('overlay opacity control present, gear is bare glyph', ui.hasOpacity && ui.gear === '⚙');
+  check('overlay opacity control present, gear is bare SVG', ui.hasOpacity && ui.gearSvg, JSON.stringify(ui));
+  check('header keeps the logo without duplicate brand text', ui.brandLogoOnly, JSON.stringify(ui));
+  check('task minutes remain the rightmost row element', ui.minutesRightmost, JSON.stringify(ui));
+  check('auto-advance is a checked captionless arrow with hover help', ui.arrow, JSON.stringify(ui));
+  check('reflog lock is checked, captionless, and only visible when unfolded',
+    ui.lock && ui.lockVisible && ui.lockHiddenWhenFolded, JSON.stringify(ui));
   await call('settings:set', { overlayOpacity: 55 });
   snap = await call('day:get');
   check('overlay opacity setting round-trips', snap.settings.overlayOpacity === 55);
 
   // overlay style switch: top strip ↔ floater geometry follows
   const barWin = windows.ALL.find((w) => w.webContents.getURL().includes('bar.html'));
+  const snoozeAppearance = (prefix) => barWin.webContents.executeJavaScript(`(() => {
+    const button = document.getElementById(${JSON.stringify(prefix + '-break')});
+    const dot = document.getElementById(${JSON.stringify(prefix + '-dot')});
+    const glyph = button.querySelector('.snooze-glyph');
+    if (!glyph) return { ok: false, why: 'missing snooze glyph' };
+    const b = button.getBoundingClientRect(), d = dot.getBoundingClientRect(), g = glyph.getBoundingClientRect();
+    const style = getComputedStyle(glyph), background = getComputedStyle(button).backgroundColor;
+    const rgba = (background.match(/[0-9.]+/g) || []).map(Number);
+    const expectedLabel = I18N.t(I18N.resolve(locale, navigator.language), 'bar.manual_break');
+    return { ok: b.width > 0 && g.width > 0 && d.width > 0 && b.right < d.left && g.right < d.left &&
+      button.nextElementSibling === dot && glyph.textContent === '💤' && glyph.getAttribute('aria-hidden') === 'true' &&
+      button.getAttribute('aria-label') === expectedLabel && !!expectedLabel &&
+      style.fontSize === ${JSON.stringify(prefix === 'top' ? '19px' : '22px')} &&
+      rgba[0] === 174 && rgba[1] === 216 && rgba[2] === 252 && (rgba[3] ?? 1) > 0 &&
+      style.filter.includes('drop-shadow') && style.filter.includes('174, 216, 252'),
+      buttonRight: b.right, glyphRight: g.right, dotLeft: d.left,
+      label: button.getAttribute('aria-label'), font: style.fontSize, background, glow: style.filter };
+  })()`);
   await call('settings:set', { overlayStyle: 'top' });
   await sleep(600);
   const topBounds = barWin.getBounds();
+  const topSnooze = await snoozeAppearance('top');
+  check('top snooze glyph immediately precedes dot on the left with aria label, 19px font and tinted glow',
+    topSnooze.ok, JSON.stringify(topSnooze));
   await call('settings:set', { overlayStyle: 'floater' });
   await sleep(600);
   const flBounds = barWin.getBounds();
+  const floaterSnooze = await snoozeAppearance('fl');
+  check('floater snooze glyph immediately precedes dot on the left with aria label, 22px font and tinted glow',
+    floaterSnooze.ok, JSON.stringify(floaterSnooze));
   check('overlay style switches strip → floater geometry',
     topBounds.width > 1000 && topBounds.height === 26 && flBounds.width === 460 && flBounds.height === 78,
     `${topBounds.width}x${topBounds.height} → ${flBounds.width}x${flBounds.height}`);
@@ -341,8 +393,8 @@ async function run({ app, getMainWin, state, store, windows }) {
   check('top mode actually shows the strip',
     topShown.top !== 'none' && topShown.fl === 'none', JSON.stringify(topShown));
 
-  // overlay mouse policy: the strip is interactive only while the cursor is
-  // over its grip, the floater never goes click-through
+  // The strip accepts pointer hits on its grip and break button;
+  // leaving these controls restores click-through. The floater accepts pointer hits.
   const policy = [];
   const realIgnore = barWin.setIgnoreMouseEvents.bind(barWin);
   barWin.setIgnoreMouseEvents = (ignore, opts) => {
@@ -366,8 +418,40 @@ async function run({ app, getMainWin, state, store, windows }) {
   await barWin.webContents.executeJavaScript('document.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })), true');
   await sleep(200);
   const leftIgnored = policy.includes('ignore');
-  check('strip accepts the mouse only while over the grip',
+  check('strip grip accepts the mouse and leaving restores click-through',
     gripAccepted && leftIgnored, `accept=${gripAccepted} leave=${leftIgnored}`);
+  policy.length = 0;
+  await hover('#top-break');
+  const breakAccepted = policy.includes('accept');
+  const topBreakPosition = barWin.getPosition();
+  await barWin.webContents.executeJavaScript(`(() => {
+    const button = document.getElementById('top-break'), glyph = button.querySelector('.snooze-glyph');
+    const r = glyph.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const target = document.elementFromPoint(x, y);
+    if (!target?.closest('#top-break')) return false;
+    target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0,
+      clientX: x, clientY: y, screenX: 600, screenY: 10 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true,
+      clientX: x, clientY: y, screenX: 640, screenY: 30 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    return true;
+  })()`).then((hit) => check('top snooze glyph hit targets the break button', hit));
+  await sleep(200);
+  const afterBreakPress = barWin.getPosition();
+  const breakShield = windows.ALL.find((w) => w.webContents.getURL().includes('dragshield'));
+  check('top break button press and pointer movement preserve position without drag shield',
+    topBreakPosition.join(',') === afterBreakPress.join(',') && !breakShield?.isVisible(),
+    `${topBreakPosition} → ${afterBreakPress}`);
+  policy.length = 0;
+  await hover('#top-dot');
+  const breakLeftIgnored = policy.includes('ignore');
+  check('top break button accepts pointer hits and leaving for dot restores click-through',
+    breakAccepted && breakLeftIgnored, `accept=${breakAccepted} leave=${breakLeftIgnored}`);
+  policy.length = 0;
+  await hover('#top-break');
+  await barWin.webContents.executeJavaScript('document.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })), true');
+  await sleep(200);
+  check('leaving top break button through window edge restores click-through', policy.includes('ignore'), JSON.stringify(policy));
 
   // floater: draggable from anywhere on the capsule, and stale interactivity
   // toggles must not turn it click-through
@@ -584,16 +668,24 @@ async function run({ app, getMainWin, state, store, windows }) {
   const regenVisible = await win.webContents.executeJavaScript(`(async () => {
     document.querySelector('[data-view=sum]').click();
     await new Promise((r) => setTimeout(r, 400));
-    const inAI = document.getElementById('btn-resummarize').hidden;
+    const refresh = document.getElementById('btn-resummarize');
+    const inAI = refresh.hidden;
+    const svg = refresh.querySelector('svg');
+    const r = svg?.getBoundingClientRect();
+    const refreshSVG24 = !!svg && svg.getAttribute('viewBox') === '0 0 24 24' &&
+      svg.getAttribute('width') === '24' && svg.getAttribute('height') === '24' &&
+      Math.abs(r.width - 24) <= 1 && Math.abs(r.height - 24) <= 1 &&
+      !!svg.querySelector('path') && refresh.getAttribute('aria-label')?.trim().length > 0;
     await shapeday.call('settings:set', { summaryMode: 'template' });
     await new Promise((r) => setTimeout(r, 400));
     document.querySelector('.sum-scopes [data-scope=day]').click();
     await new Promise((r) => setTimeout(r, 400));
     const inTemplate = document.getElementById('btn-resummarize').hidden;
-    return { inAI, inTemplate }; // inAI should be false (shown), inTemplate true
+    return { inAI, inTemplate, refreshSVG24 }; // inAI should be false (shown), inTemplate true
   })()`);
   check('regen button shows in AI mode, hidden in template mode',
     regenVisible.inAI === false && regenVisible.inTemplate === true, JSON.stringify(regenVisible));
+  check('refresh action uses accessible 24px SVG in AI summary mode', regenVisible.refreshSVG24, JSON.stringify(regenVisible));
   const dbg = await win.webContents.executeJavaScript('window.__events.map(e => e.type + (e.data && e.data.error ? ":" + e.data.error : ""))');
   console.log('EVENTS:', JSON.stringify(dbg));
   srv.close();
@@ -726,7 +818,7 @@ async function run({ app, getMainWin, state, store, windows }) {
   check('month preview day-title hint opens the workload chart', dayPick.ok === true, JSON.stringify(dayPick));
 
   // the summary strip stays hover-quiet too: hovering a cell never pops the
-  // bubble over the grid; the click below still opens the day
+  // bubble over the grid; clicking toggles the summary row, never the day
   const cellHover = await win.webContents.executeJavaScript(`(async () => {
     document.querySelector('[data-viz=week]').click();
     await new Promise((r) => setTimeout(r, 700));
@@ -742,21 +834,201 @@ async function run({ app, getMainWin, state, store, windows }) {
   })()`);
   check('summary cells stay hover-quiet (no bubble over the grid)', cellHover.ok === true, JSON.stringify(cellHover));
 
-  // summary cells open their day's chart too
-  const cellDay = await win.webContents.executeJavaScript(`(async () => {
-    const cell = document.querySelector('#week-summaries .cell[data-date]');
-    if (!cell) return { ok: false, why: 'no cell' };
-    const date = cell.dataset.date;
-    const today = (await shapeday.call('day:get')).date;
-    cell.click();
-    await new Promise((r) => setTimeout(r, 900));
-    const chip = document.getElementById('day-pick');
-    const chipShown = chip && !chip.hidden;
-    chip.click();
-    await new Promise((r) => setTimeout(r, 600));
-    return { ok: date !== today ? chipShown === true : true, why: 'date=' + date };
-  })()`);
-  check('summary cell opens its day chart', cellDay.ok === true, JSON.stringify(cellDay));
+  // Seed genuine persisted summaries, never alter renderer content/style to force overflow.
+  {
+    const report = await call('report:get', { scope: 'week' });
+    const keys = [...vizWeek.days.map((d) => d.date), report.periodKey];
+    const previous = keys.map((key) => [key, store.summary(key)]);
+    const longText = Array.from({ length: 90 }, (_, i) => `Summary line ${i + 1}: full text remains readable and independently scrollable.`).join('\n');
+    try {
+      keys.forEach((key) => store.putSummary(key, { at: Date.now(), recap: key + '\n' + longText, suggestions: [] }));
+      store.flush();
+      const weekContract = await win.webContents.executeJavaScript(`(async () => {
+        const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+        document.querySelector('[data-viz=month]').click();
+        await pause(200);
+        document.querySelector('[data-viz=week]').click();
+        await pause(900);
+        const box = document.getElementById('week-summaries'), row = document.getElementById('week-summary-row');
+        const cells = [...row.querySelectorAll('.cell')], header = document.getElementById('week-header');
+        const buttons = [...header.querySelectorAll('.week-day')], canvas = document.getElementById('timeline');
+        const dates = buttons.map((b) => b.dataset.date), period = box.dataset.period;
+        const height = (el) => el.getBoundingClientRect().height;
+        const equal = (expected) => cells.length === 7 && cells.every((c) => Math.abs(height(c) - expected) <= 1);
+        const scopeWeek = () => document.querySelector('.viz-scopes [data-viz=week]').classList.contains('active');
+        const initial = row.dataset.expanded === 'false' && Math.abs(height(row) - 112) <= 1 && equal(112) &&
+          buttons.length === 7 && buttons.every((b) => b.tagName === 'BUTTON' && b.textContent.trim() &&
+            b.getAttribute('aria-label').includes(b.dataset.date)) &&
+          buttons.filter((b) => b.getAttribute('aria-current') === 'date').length === 1;
+        const filled = cells.filter((c) => !c.classList.contains('empty'));
+        const fullText = filled.length > 0 && filled.every((c) => c.textContent === c.dataset.date + '\\n' + ${JSON.stringify(longText)} &&
+          getComputedStyle(c).overflowY === 'auto' && c.scrollHeight > c.clientHeight);
+        const scrollbar = (el, width) => {
+          const bar = getComputedStyle(el, '::-webkit-scrollbar');
+          const thumb = getComputedStyle(el, '::-webkit-scrollbar-thumb');
+          const track = getComputedStyle(el, '::-webkit-scrollbar-track');
+          const buttons = getComputedStyle(el, '::-webkit-scrollbar-button');
+          return parseFloat(bar.width) === width && bar.display !== 'none' &&
+            thumb.backgroundColor === 'rgb(72, 82, 99)' && parseFloat(thumb.borderRadius) >= 20 &&
+            thumb.backgroundClip === 'padding-box' && track.backgroundColor === 'rgba(0, 0, 0, 0)' &&
+            buttons.display === 'none' && getComputedStyle(el).scrollbarGutter === 'stable';
+        };
+        const customScrollbars = filled.every((c) => scrollbar(c, 8)) &&
+          scrollbar(document.getElementById('view-viz'), 10) &&
+          getComputedStyle(document.documentElement).colorScheme === 'dark';
+        filled[0].click();
+        const cap = Math.min(320, Math.max(180, innerHeight * 0.36));
+        const expanded = row.dataset.expanded === 'true' && equal(cap) && Math.abs(height(row) - cap) <= 1 &&
+          cells.every((c) => c.getAttribute('aria-expanded') === 'true') && scopeWeek() && box.dataset.period === period;
+        const view = document.getElementById('view-viz'), viewScroll = view.scrollTop;
+        filled[0].focus({ preventScroll: true });
+        filled[0].scrollTop = filled[0].scrollHeight;
+        const cellScroll = filled[0].scrollTop;
+        const independent = cellScroll > 0 && cells.filter((c) => c !== filled[0]).every((c) => c.scrollTop === 0) &&
+          view.scrollTop === viewScroll && document.scrollingElement.scrollTop === 0;
+        // Re-select the active view: real forced refetch without hiding the focused cell.
+        document.querySelector('[data-view=viz]').click();
+        await pause(900);
+        const preserved = document.getElementById('week-summary-row') === row && row.dataset.expanded === 'true' &&
+          document.activeElement === filled[0] && filled[0].scrollTop === cellScroll && box.dataset.period === period && scopeWeek() && equal(cap) &&
+          buttons.every((b, i) => b.dataset.date === dates[i]);
+        const week = document.getElementById('week-period-summary');
+        const periodFull = week.querySelector('span').textContent === ${JSON.stringify(report.periodKey + '\n' + longText)} &&
+          week.dataset.expanded === 'false' && Math.abs(height(week) - 96) <= 1;
+        week.click(); week.scrollTop = week.scrollHeight;
+        const periodExpanded = week.dataset.expanded === 'true' && Math.abs(height(week) - cap) <= 1 &&
+          getComputedStyle(week).overflowY === 'auto' && week.scrollTop > 0 && row.dataset.expanded === 'true' && scopeWeek();
+        const r = canvas.getBoundingClientRect();
+        const blank = { x: 1, y: 1 }; // outside all drawn task blocks, in the canvas gutter
+        const noDayHits = !(canvas._hits || []).some((h) => h.kind === 'day');
+        const noHit = !Timeline.hitTest(canvas, r.left + blank.x, r.top + blank.y);
+        canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + blank.x, clientY: r.top + blank.y }));
+        await pause(150);
+        const blankQuiet = noDayHits && noHit && scopeWeek() && box.dataset.period === period &&
+          row.dataset.expanded === 'true' && document.getElementById('viz-bubble').hidden;
+        cells[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        const collapsed = row.dataset.expanded === 'false' && equal(112) && scopeWeek() && week.dataset.expanded === 'true';
+        week.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+        const periodCollapsed = week.dataset.expanded === 'false' && Math.abs(height(week) - 96) <= 1;
+        const today = (await shapeday.call('day:get')).date;
+        const button = buttons.find((b) => b.dataset.date !== today);
+        button.click();
+        await pause(900);
+        const selected = document.getElementById('day-pick');
+        const navigates = document.querySelector('.viz-scopes [data-viz=day]').classList.contains('active') &&
+          !selected.hidden && box.hidden && header.hidden;
+        selected.click(); await pause(500);
+        return { initial, fullText, expanded, independent, preserved, periodFull, periodExpanded,
+          blankQuiet, collapsed, periodCollapsed, navigates, cap, cellScroll, customScrollbars };
+      })()`);
+      check('week header has seven semantic date buttons; summary cells default to equal 112px full-text scroll areas',
+        weekContract.initial && weekContract.fullText, JSON.stringify(weekContract));
+      check('week summary click expands all cells to clamped height without navigation; refetch preserves nodes/state/scroll',
+        weekContract.expanded && weekContract.independent && weekContract.preserved && weekContract.collapsed, JSON.stringify(weekContract));
+      check('week period summary expands and scrolls independently with the same cap',
+        weekContract.periodFull && weekContract.periodExpanded && weekContract.periodCollapsed, JSON.stringify(weekContract));
+      check('week blank canvas has no day hit/navigation; only header button opens day chart',
+        weekContract.blankQuiet && weekContract.navigates, JSON.stringify(weekContract));
+      check('week cells and view use custom dark rounded scrollbars with stable gutters',
+        weekContract.customScrollbars, JSON.stringify(weekContract));
+      const main = getMainWin(), originalBounds = main.getBounds();
+      try {
+        for (const [width, height] of [[900, 620], [1120, 760], [1450, 900]]) {
+          main.setSize(width, height); // native main-process resize, never CSS/DOM viewport emulation
+          await sleep(350);
+          const layout = await main.webContents.executeJavaScript(`(async () => {
+            const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+            document.querySelector('[data-view=plan]').click();
+            const settings = document.querySelector('details.settings'), summary = settings.querySelector('summary');
+            if (settings.open) summary.click();
+            await pause(100);
+            const measure = () => {
+              const rect = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+              return { root: rect(document.getElementById('app')), list: rect(document.getElementById('task-list')),
+                task: rect(document.querySelector('#task-list li.task')), entry: rect(document.getElementById('add-entry')) };
+            };
+            const baseline = measure();
+            const rootFits = () => document.documentElement.scrollWidth <= innerWidth + 1 &&
+              document.documentElement.scrollHeight <= innerHeight + 1 && document.body.scrollWidth <= innerWidth + 1 &&
+              document.body.scrollHeight <= innerHeight + 1 && document.scrollingElement.scrollTop === 0 &&
+              document.scrollingElement.scrollLeft === 0;
+            summary.click(); await pause(150);
+            const opened = measure(), pop = settings.querySelector('.settings-pop');
+            const same = (a, b) => Object.keys(a).every((k) => Math.abs(a[k] - b[k]) <= 1);
+            const stable = Object.keys(baseline).every((k) => same(baseline[k], opened[k]));
+            const p = pop.getBoundingClientRect(), s = summary.getBoundingClientRect();
+            const scrollStyle = getComputedStyle(pop, '::-webkit-scrollbar');
+            const thumbStyle = getComputedStyle(pop, '::-webkit-scrollbar-thumb');
+            const customScrollbars = parseFloat(scrollStyle.width) === 10 && scrollStyle.display !== 'none' &&
+              thumbStyle.backgroundColor === 'rgb(72, 82, 99)' && parseFloat(thumbStyle.borderRadius) >= 20 &&
+              getComputedStyle(pop).scrollbarGutter === 'stable';
+            const bounded = settings.open && p.left >= 0 && p.right <= innerWidth + 1 &&
+              p.top >= s.bottom && p.bottom <= innerHeight - 8 && getComputedStyle(pop).overflowY === 'auto' &&
+              pop.scrollWidth <= pop.clientWidth + 1;
+            const controls = [...pop.querySelectorAll('input, select, textarea, button')];
+            const reached = [];
+            const view = document.getElementById('view-plan'), viewScroll = view.scrollTop;
+            for (const control of controls) {
+              control.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+              const c = control.getBoundingClientRect(), r = pop.getBoundingClientRect();
+              reached.push(c.width > 0 && c.height > 0 && c.left >= r.left && c.right <= r.right &&
+                c.top >= r.top && c.bottom <= r.bottom);
+            }
+            const ownScroll = (pop.scrollHeight <= pop.clientHeight + 1 || pop.scrollTop > 0) &&
+              view.scrollTop === viewScroll && rootFits();
+            const reachable = controls.length > 20 && reached.every(Boolean) &&
+              controls.some((c) => c.id === 'set-start') && controls.some((c) => c.id === 'llm-test');
+            summary.click(); await pause(100);
+            const closed = measure();
+            const closesStable = Object.keys(baseline).every((k) => same(baseline[k], closed[k])) && rootFits();
+            document.querySelector('[data-view=viz]').click();
+            document.querySelector('[data-viz=week]').click(); await pause(700);
+            const row = document.getElementById('week-summary-row'), cells = [...row.querySelectorAll('.cell')];
+            if (row.dataset.expanded === 'true') cells[0].click();
+            const defaults = cells.every((c) => Math.abs(c.getBoundingClientRect().height - 112) <= 1);
+            cells[0].click();
+            const cap = Math.min(320, Math.max(180, innerHeight * 0.36));
+            const capOK = row.dataset.expanded === 'true' && cells.length === 7 && cells.every((c) =>
+              Math.abs(c.getBoundingClientRect().height - cap) <= 1 && getComputedStyle(c).overflowY === 'auto') &&
+              Math.abs(row.getBoundingClientRect().height - cap) <= 1 && rootFits();
+            const canvas = document.getElementById('timeline'), header = document.getElementById('week-header');
+            const cr = canvas.getBoundingClientRect(), hr = header.getBoundingClientRect();
+            const aligned = Math.abs(cr.width - hr.width) <= 1 && Math.abs(cr.left - hr.left) <= 1 &&
+              Math.abs(canvas.width - canvas.clientWidth * devicePixelRatio) <= 1;
+            return { stable, bounded, ownScroll, reachable, closesStable, defaults, capOK, aligned, customScrollbars,
+              scrollbarStyle: { width: scrollStyle.width, display: scrollStyle.display, color: thumbStyle.backgroundColor,
+                radius: thumbStyle.borderRadius, gutter: getComputedStyle(pop).scrollbarGutter },
+              viewport: [innerWidth, innerHeight], cap, baseline, opened, controls: controls.length,
+              unreachable: controls.filter((c, i) => !reached[i]).map((c) => c.id) };
+          })()`);
+          check(`settings ${width}x${height}: opening/closing preserves root/task geometry without root scroll`,
+            layout.stable && layout.closesStable, JSON.stringify(layout));
+          check(`settings ${width}x${height}: bounded own scrolling reaches every control`,
+            layout.bounded && layout.ownScroll && layout.reachable, JSON.stringify(layout));
+          check(`settings ${width}x${height}: custom dark scrollbar preserves its reserved gutter`,
+            layout.customScrollbars, JSON.stringify(layout));
+          check(`week ${width}x${height}: equal 112px default, expanded 180/36vh/320 clamp and aligned canvas`,
+            layout.defaults && layout.capOK && layout.aligned, JSON.stringify(layout));
+        }
+      } finally {
+        main.setBounds(originalBounds);
+        await sleep(350);
+        await main.webContents.executeJavaScript(`(() => {
+          const settings = document.querySelector('details.settings');
+          if (settings.open) settings.querySelector('summary').click();
+          document.querySelector('[data-view=viz]').click();
+          document.querySelector('[data-viz=day]').click();
+          return true;
+        })()`);
+      }
+    } catch (e) {
+      check('week summary/header UI contract completes', false, e.stack || String(e));
+    } finally {
+      previous.forEach(([key, summary]) => store.putSummary(key, summary));
+      store.flush();
+      await win.webContents.executeJavaScript(`document.querySelector('[data-viz=day]').click(), true`);
+    }
+  }
 
   // frozen hours: a past day's bounds survive a global work-end change. The
   // freeze only applies to days that actually lived under their hours, so a
@@ -838,6 +1110,741 @@ async function run({ app, getMainWin, state, store, windows }) {
   check('month and year report scopes work',
     repMonth.metrics && repYear.metrics && typeof repMonth.templated === 'string');
 
+  // Actual recurring UI + manual-break + historical-summary regressions.
+  // Keep this isolated from the earlier workload and from tray restore below.
+  {
+    const before = await call('day:get');
+    const savedDay = JSON.parse(JSON.stringify(before.day));
+    const savedRules = JSON.parse(JSON.stringify(store.recurring));
+    const savedSettings = {
+      locale: before.settings.locale, autoAdvance: before.settings.autoAdvance,
+      overlayStyle: before.settings.overlayStyle, overlayEnabled: before.settings.overlayEnabled,
+      summaryMode: before.settings.summaryMode,
+    };
+    const yesterday = new Date(before.date + 'T00:00:00');
+    yesterday.setDate(yesterday.getDate() - 1);
+    const pad = (n) => String(n).padStart(2, '0');
+    const pastDate = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
+    const savedPast = JSON.parse(JSON.stringify(store.day(pastDate)));
+    // This date already exists from the frozen-hours regression above.
+    const probeUI = (body) => win.webContents.executeJavaScript(`(async () => {
+      const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (read, label) => {
+        for (let i = 0; i < 80; i++) {
+          const value = await read();
+          if (value) return value;
+          await pause(50);
+        }
+        throw new Error('Timed out: ' + label);
+      };
+      const visible = (el) => !!el && el.getClientRects().length > 0 &&
+        getComputedStyle(el).visibility === 'visible' && getComputedStyle(el).opacity !== '0';
+      ${body}
+    })()`);
+    try {
+      await call('break:end');
+      await call('break:respond', { accept: false });
+      store.updateRecurring((rules) => rules.splice(0));
+      await call('day:clear');
+      await call('settings:set', {
+        locale: 'en-us', autoAdvance: true, overlayStyle: 'top', overlayEnabled: true,
+        summaryMode: 'template',
+      });
+      await sleep(1200);
+      const helperProbe = await probeUI(`
+        document.querySelector('[data-view=plan]').click();
+        const input = document.getElementById('add-input');
+        input.focus();
+        input.value = 'Stretch each: ';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const tag = await waitFor(() => document.querySelector('#add-entry .each-tag'), 'auto inline tag');
+        const frequency = tag.querySelector('.each-value');
+        const helper = await waitFor(() => document.querySelector('.each-help:popover-open'), 'visible helper');
+        const rect = (el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height };
+        };
+        const above = (a, b) => a.bottom <= b.top && a.left < b.right && a.right > b.left;
+        const full = rect(helper), tagRect = rect(tag);
+        const kbd = helper.querySelector('kbd');
+        const bg = getComputedStyle(helper).backgroundColor;
+        const alpha = Number(bg.match(/rgba\\([^)]*,\\s*([\\d.]+)\\)$/)?.[1]);
+        const helperOpacity = Number(getComputedStyle(helper).opacity);
+        const kbdStyle = getComputedStyle(kbd);
+        const fullOK = visible(tag) && visible(helper) && document.activeElement === frequency &&
+          input.value === 'Stretch' && frequency.value === '' && above(full, tagRect) && alpha === 0.5 &&
+          helper.firstElementChild.textContent.includes('w|d|h|m|s|day|week') &&
+          kbd.textContent === 'tab' && !helper.textContent.includes('[tab]') &&
+          Number(kbdStyle.opacity) < helperOpacity && parseFloat(kbdStyle.borderTopWidth) > 0 &&
+          parseFloat(kbdStyle.borderRadius) > 0 && visible(helper.querySelector('.each-help-more')) &&
+          helper.textContent.includes('w = week; d = day; h = hour; m = min; s = sec') &&
+          helper.textContent.includes('each: day') && helper.textContent.includes('each: 1d') &&
+          helper.textContent.includes('each: week') && helper.textContent.includes('each: 1w');
+        frequency.value = 'day';
+        frequency.dispatchEvent(new Event('input', { bubbles: true }));
+        const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+        frequency.dispatchEvent(tab);
+        await pause(100);
+        const s = await shapeday.call('day:get');
+        const confirmed = tab.defaultPrevented && tag.textContent === 'each: 1d' &&
+          !tag.querySelector('input') && document.activeElement === document.querySelector('#add-entry .each-tail') &&
+          !document.querySelector('.each-help:popover-open') && s.day.tasks.length === 0 && s.recurring.length === 0;
+        return { fullOK, confirmed, alpha, full, tagRect, bg };
+      `);
+      check('recurring add input auto-tags with half-alpha helper above and outlined dim Tab',
+        helperProbe.fullOK, JSON.stringify(helperProbe));
+      check('recurring full-default helper Tab confirms token and focuses tail without adding task',
+        helperProbe.confirmed, JSON.stringify(helperProbe));
+
+      const addKeys = await probeUI(`
+        const input = document.getElementById('add-input'), entry = document.getElementById('add-entry');
+        const key = (el, name) => {
+          const e = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
+          el.dispatchEvent(e); return e.defaultPrevented;
+        };
+        let tag = entry.querySelector('.each-tag');
+        tag.click();
+        let field = tag.querySelector('input');
+        field.value = '2h'; field.dispatchEvent(new Event('input', { bubbles: true }));
+        const esc = key(field, 'Escape');
+        const valid = esc && tag.textContent === 'each: 2h' && !tag.querySelector('input') &&
+          document.activeElement === entry.querySelector('.each-tail') && !document.querySelector('.each-help:popover-open');
+        tag.click(); field = tag.querySelector('input');
+        field.value = 'nonsense'; field.dispatchEvent(new Event('input', { bubbles: true }));
+        key(field, 'Escape');
+        const restored = tag.textContent === 'each: 2h' && !tag.querySelector('input') &&
+          document.activeElement === entry.querySelector('.each-tail') && !document.querySelector('.each-help:popover-open');
+        const tail = entry.querySelector('.each-tail'); tail.value = 'after'; tail.setSelectionRange(0, 0);
+        const tailRemoved = key(tail, 'Backspace') && !entry.querySelector('.each-tag') &&
+          input.value === 'Stretch after' && document.activeElement === input && input.selectionStart === 'Stretch'.length;
+        input.value = 'Stretch each: invalid'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        key(entry.querySelector('.each-value'), 'Escape');
+        const invalid = !entry.querySelector('.each-tag') && input.value === 'Stretch' &&
+          document.activeElement === input && !document.querySelector('.each-help:popover-open');
+        input.value = 'Stretch each: day'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        field = entry.querySelector('.each-value'); field.setSelectionRange(0, 0);
+        const caretRemoved = key(field, 'Backspace') && !entry.querySelector('.each-tag') && input.value === 'Stretch';
+        input.value = 'Stretch each: day'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        key(entry.querySelector('.each-value'), 'Tab');
+        tag = entry.querySelector('.each-tag'); tag.focus();
+        const deleteRemoved = key(tag, 'Delete') && !entry.querySelector('.each-tag') && input.value === 'Stretch';
+        input.value = 'Stretch each: day'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        field = entry.querySelector('.each-value'); field.select();
+        const s = await shapeday.call('day:get');
+        return { valid, restored, tailRemoved, invalid, caretRemoved, deleteRemoved,
+          noSubmit: s.day.tasks.length === 0 && s.recurring.length === 0 };
+      `);
+      check('add Esc applies valid frequency and invalid Esc restores prior token without a focus trap',
+        addKeys.valid && addKeys.restored && addKeys.invalid && addKeys.noSubmit, JSON.stringify(addKeys));
+      check('add tail Backspace, tag Delete and frequency caret-zero Backspace remove token preserving text',
+        addKeys.tailRemoved && addKeys.deleteRemoved && addKeys.caretRemoved, JSON.stringify(addKeys));
+      // Native keyboard deletion exercises the browser default action, not a synthetic DOM mutation.
+      win.focus();
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+      const selectedDelete = await probeUI(`
+        const entry = document.getElementById('add-entry');
+        const field = await waitFor(() => entry.querySelector('.each-value')?.value === '' &&
+          entry.querySelector('.each-value'), 'native Backspace clears selected frequency');
+        const cleared = !!entry.querySelector('.each-tag') && document.activeElement === field;
+        return { cleared, caret: field.selectionStart, end: field.selectionEnd };
+      `);
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+      const emptyDelete = await probeUI(`
+        await waitFor(() => !document.querySelector('#add-entry .each-tag'), 'second Backspace deletes token');
+        const input = document.getElementById('add-input');
+        const removed = input.value === 'Stretch' && document.activeElement === input &&
+          !document.querySelector('.each-help:popover-open');
+        input.value = 'Stretch each: day'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('#add-entry .each-value').dispatchEvent(new KeyboardEvent('keydown',
+          { key: 'Tab', bubbles: true, cancelable: true }));
+        return removed;
+      `);
+      check('selected frequency Backspace clears value first, next Backspace removes tag',
+        selectedDelete.cleared && selectedDelete.caret === 0 && selectedDelete.end === 0 && emptyDelete,
+        JSON.stringify(selectedDelete));
+
+      const added = await probeUI(`
+        document.querySelector('#add-entry .each-tag').click();
+        const frequency = await waitFor(() => document.querySelector('#add-entry .each-value'), 'reopened add tag');
+        frequency.value = '1h';
+        frequency.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('add-btn').click();
+        const s = await waitFor(async () => {
+          const s = await shapeday.call('day:get');
+          return s.day.tasks.length === 1 && s.recurring.length === 1 ? s : null;
+        }, 'one recurring task');
+        const row = await waitFor(() => [...document.querySelectorAll('#task-list li.task')]
+          .find((r) => r.querySelector('.title')?.textContent === 'Stretch' && r.querySelector('.each-chip')), 'recurring row');
+        const chip = row.querySelector('.each-chip'), minutes = row.querySelector('.chip');
+        const cr = chip.getBoundingClientRect(), mr = minutes.getBoundingClientRect();
+        const badge = document.getElementById('recurring-count');
+        const rule = s.recurring[0], task = s.day.tasks[0];
+        return { id: task.id, ruleId: rule.id, title: task.title,
+          ok: task.title === 'Stretch' && task.recurringId === rule.id && rule.title === 'Stretch' &&
+            rule.every === 1 && rule.unit === 'h' && visible(badge) && badge.textContent === '1' &&
+            chip.textContent === 'each: 1h' && visible(row.querySelector('.mins')) &&
+            cr.right <= mr.left + 1 && mr.left - cr.right <= 24 && row.lastElementChild === minutes &&
+            !document.querySelector('#add-entry .each-tag'),
+          chipRight: cr.right, minutesLeft: mr.left };
+      `);
+      check('recurring UI add persists clean title and one badge; frequency precedes rightmost minutes',
+        added.ok, JSON.stringify(added));
+      const edited = await probeUI(`
+        const id = ${JSON.stringify(added.id)}, ruleId = ${JSON.stringify(added.ruleId)};
+        document.querySelector('#task-list .each-chip').click();
+        const input = await waitFor(() => document.querySelector('#task-list .each-chip .each-value'), 'chip editor');
+        input.value = '2m';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        const s = await waitFor(async () => {
+          const s = await shapeday.call('day:get');
+          const r = s.recurring.find((r) => r.id === ruleId);
+          return r?.every === 2 && r.unit === 'm' &&
+            document.querySelector('#task-list .each-chip')?.textContent === 'each: 2m' &&
+            !document.querySelector('#task-list .each-chip input') ? s : null;
+        }, 'committed 2m chip');
+        return { ok: s.day.tasks.find((t) => t.id === id)?.recurringId === ruleId &&
+          s.day.tasks[0].title === 'Stretch', rule: s.recurring.find((r) => r.id === ruleId) };
+      `);
+      check('recurring frequency chip inline Enter persists 2m on the same rule', edited.ok, JSON.stringify(edited));
+      const chipKeys = await probeUI(`
+        const ruleId = ${JSON.stringify(added.ruleId)};
+        const key = (el, name) => el.dispatchEvent(new KeyboardEvent('keydown',
+          { key: name, bubbles: true, cancelable: true }));
+        const readRule = async () => (await shapeday.call('day:get')).recurring.find((r) => r.id === ruleId);
+        const original = await readRule();
+        document.querySelector('#task-list .each-chip').click();
+        let field = await waitFor(() => document.querySelector('#task-list .each-chip input'), 'invalid chip editor');
+        field.value = 'invalid'; key(field, 'Escape');
+        await waitFor(() => !document.querySelector('#task-list .each-chip input'), 'invalid Esc cancels chip');
+        const canceled = JSON.stringify(await readRule()) === JSON.stringify(original) &&
+          document.querySelector('#task-list .each-chip').textContent === 'each: 2m' &&
+          !document.querySelector('.each-help:popover-open');
+        const outcomes = [];
+        for (const [name, value, every] of [['Escape', '3m', 3], ['Tab', '4m', 4]]) {
+          document.querySelector('#task-list .each-chip').click();
+          field = await waitFor(() => document.querySelector('#task-list .each-chip input'), 'valid chip editor');
+          const full = visible(document.querySelector('.each-help:popover-open .each-help-more'));
+          field.value = value; key(field, name);
+          const r = await waitFor(async () => {
+            const r = await readRule();
+            return r?.every === every && r.unit === 'm' &&
+              !document.querySelector('#task-list .each-chip input') ? r : null;
+          }, name + ' persists chip');
+          outcomes.push(full && r.id === ruleId && document.querySelector('#task-list .each-chip').textContent === 'each: ' + value &&
+            !document.querySelector('.each-help:popover-open'));
+        }
+        // A no-op confirmation must not restart the offline interval anchor.
+        const anchor = await readRule();
+        document.querySelector('#task-list .each-chip').click();
+        field = await waitFor(() => document.querySelector('#task-list .each-chip input'), 'no-op chip editor');
+        key(field, 'Escape');
+        await waitFor(() => !document.querySelector('#task-list .each-chip input'), 'no-op chip closed');
+        const unchanged = await readRule();
+        return { canceled, valid: outcomes.every(Boolean), anchorStable: anchor.nextAt === unchanged.nextAt &&
+          anchor.nextDate === unchanged.nextDate, anchor, unchanged };
+      `);
+      check('saved each chip invalid Esc cancels; valid Esc/Tab persist and close full helper',
+        chipKeys.canceled && chipKeys.valid, JSON.stringify(chipKeys));
+      check('saved each chip no-op Esc preserves offline recurrence anchor', chipKeys.anchorStable, JSON.stringify(chipKeys));
+      const descriptionKeys = await probeUI(`
+        const id = ${JSON.stringify(added.id)}, ruleId = ${JSON.stringify(added.ruleId)};
+        const outcomes = [];
+        for (const [name, frequency, every] of [['Escape', '5h', 5], ['Tab', '6h', 6]]) {
+          const prior = (await shapeday.call('day:get')).day.tasks.find((t) => t.id === id).title;
+          document.querySelector('#task-list .title').click();
+          const box = await waitFor(() => document.querySelector('#task-list .title-edit'), 'description editor');
+          const draft = 'Description ' + name;
+          box.value = draft + ' each: ' + frequency;
+          box.dispatchEvent(new Event('input', { bubbles: true }));
+          const tag = document.querySelector('#task-list .title-entry .each-tag');
+          const full = visible(document.querySelector('.each-help:popover-open .each-help-more'));
+          const e = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
+          tag.querySelector('input').dispatchEvent(e);
+          const s = await waitFor(async () => {
+            const s = await shapeday.call('day:get'), r = s.recurring.find((r) => r.id === ruleId);
+            return r?.every === every && r.unit === 'h' ? s : null;
+          }, name + ' immediately persists frequency without title submission');
+          const inline = e.defaultPrevented && full && box.isConnected && box.value === draft &&
+            tag.textContent === 'each: ' + frequency && !tag.querySelector('input') &&
+            document.activeElement === document.querySelector('#task-list .title-entry .each-tail') &&
+            s.day.tasks.find((t) => t.id === id).title === prior && !document.querySelector('.each-help:popover-open');
+          document.getElementById('add-input').focus();
+          const committed = await waitFor(async () => {
+            const s = await shapeday.call('day:get');
+            return s.day.tasks.find((t) => t.id === id)?.title === draft &&
+              !document.querySelector('#task-list .title-edit') ? s : null;
+          }, 'blur commits description cleanly');
+          const r = committed.recurring.find((r) => r.id === ruleId);
+          outcomes.push({ name, inline, clean: r.title === draft && r.every === every && r.unit === 'h' &&
+            document.querySelector('#task-list .each-chip').textContent === 'each: ' + frequency });
+        }
+        document.querySelector('#task-list .title').click();
+        const box = await waitFor(() => document.querySelector('#task-list .title-edit'), 'full Enter title editor');
+        box.value = 'Enter clean title each: week'; box.dispatchEvent(new Event('input', { bubbles: true }));
+        const full = visible(document.querySelector('.each-help:popover-open .each-help-more'));
+        document.querySelector('#task-list .title-entry .each-value').dispatchEvent(new KeyboardEvent('keydown',
+          { key: 'Enter', bubbles: true, cancelable: true }));
+        const s = await waitFor(async () => {
+          const s = await shapeday.call('day:get');
+          return s.day.tasks.find((t) => t.id === id)?.title === 'Enter clean title' &&
+            !document.querySelector('#task-list .title-edit') ? s : null;
+        }, 'full title Enter submits clean');
+        const r = s.recurring.find((r) => r.id === ruleId);
+        return { outcomes, enter: full && r.every === 1 && r.unit === 'w' && r.title === 'Enter clean title' &&
+          s.day.tasks.length === 1 && !document.querySelector('#task-list .title .each-tag') &&
+          !document.querySelector('.each-help:popover-open') };
+      `);
+      check('description Esc/Tab confirm inline, focus tail and persist shared frequency before clean blur',
+        descriptionKeys.outcomes.every((r) => r.inline && r.clean), JSON.stringify(descriptionKeys));
+      check('title full-form Enter remains compatible and submits a clean title', descriptionKeys.enter, JSON.stringify(descriptionKeys));
+      const titleRegressions = await probeUI(`
+        const key = (el, name) => el.dispatchEvent(new KeyboardEvent('keydown',
+          { key: name, bubbles: true, cancelable: true }));
+        const read = () => shapeday.call('day:get');
+        const input = document.getElementById('add-input'), entry = document.getElementById('add-entry');
+        const baseline = await read();
+        const unchanged = (s, prior) => JSON.stringify(s.day.tasks) === JSON.stringify(prior.day.tasks) &&
+          JSON.stringify(s.recurring) === JSON.stringify(prior.recurring);
+        let id;
+        const out = {};
+        try {
+          input.focus();
+          input.value = 'Invalid add regression each: invalid';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          let field = await waitFor(() => entry.querySelector('.each-value'), 'invalid add frequency');
+          key(field, 'Enter');
+          await pause(200);
+          out.invalidAddEnter = unchanged(await read(), baseline) && input.value === 'Invalid add regression' &&
+            entry.querySelector('.each-value')?.value === 'invalid';
+          key(input, 'Enter');
+          await pause(200);
+          out.invalidAddEnter = out.invalidAddEnter && unchanged(await read(), baseline);
+          key(entry.querySelector('.each-value'), 'Escape');
+          out.invalidAddEscape = unchanged(await read(), baseline) && !entry.querySelector('.each-tag') &&
+            input.value === 'Invalid add regression' && document.activeElement === input &&
+            !document.querySelector('.each-help:popover-open');
+          addEditor.reset();
+
+          const temporary = await shapeday.call('task:add', { title: 'Title regression each: week' });
+          id = temporary.task.id;
+          const row = () => document.querySelectorAll('#task-list li.task')[baseline.day.tasks.length];
+          const edit = async (title, frequency) => {
+            const r = await waitFor(row, 'temporary recurring row');
+            r.querySelector('.title').click();
+            const box = await waitFor(() => row()?.querySelector('.title-edit'), 'temporary title editor');
+            box.value = title + ' each: ' + frequency;
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+            await waitFor(() => row()?.querySelector('.title-entry .each-value'), 'temporary inline frequency');
+            return box;
+          };
+          const committed = (title) => waitFor(async () => {
+            const s = await read(), task = s.day.tasks.find((t) => t.id === id);
+            return task?.title === title && !row()?.querySelector('.title-edit') ? s : null;
+          }, 'temporary title committed: ' + title);
+
+          let box = await edit('Confirmed Enter title', '2w');
+          key(row().querySelector('.each-value'), 'Tab');
+          const confirmed = await waitFor(async () => {
+            const s = await read(), task = s.day.tasks.find((t) => t.id === id);
+            const rule = s.recurring.find((r) => r.id === task?.recurringId);
+            return rule?.every === 2 && rule.unit === 'w' && !row()?.querySelector('.each-tag input') ? s : null;
+          }, 'confirmed temporary title tag');
+          const ruleId = confirmed.day.tasks.find((t) => t.id === id).recurringId;
+          box.focus();
+          key(box, 'Enter');
+          let s = await committed('Confirmed Enter title');
+          let rule = s.recurring.find((r) => r.id === ruleId);
+          out.confirmedTitleEnter = rule?.title === 'Confirmed Enter title' && rule.every === 2 && rule.unit === 'w' &&
+            s.day.tasks.find((t) => t.id === id).recurringId === ruleId &&
+            !row().querySelector('.each-value') && !document.querySelector('.each-help:popover-open');
+
+          box = await edit('Escape saved title', '3w');
+          key(row().querySelector('.each-value'), 'Tab');
+          await waitFor(() => !row()?.querySelector('.each-tag input'), 'Esc title tag confirmed');
+          box.focus();
+          key(box, 'Escape');
+          s = await committed('Escape saved title');
+          rule = s.recurring.find((r) => r.id === ruleId);
+          out.titleEscape = rule?.title === 'Escape saved title' && rule.every === 3 && rule.unit === 'w' &&
+            s.day.tasks.find((t) => t.id === id).recurringId === ruleId;
+
+          box = await edit('Escape saved title', '4w');
+          key(row().querySelector('.each-value'), 'Tab');
+          s = await waitFor(async () => {
+            const s = await read(), rule = s.recurring.find((r) => r.id === ruleId);
+            return rule?.every === 4 && rule.unit === 'w' && !row()?.querySelector('.each-tag input') ? s : null;
+          }, 'inline Tab persists shared rule before removal');
+          out.inlineTab = box.isConnected && s.day.tasks.find((t) => t.id === id).recurringId === ruleId &&
+            document.activeElement === row().querySelector('.each-tail');
+          const tail = row().querySelector('.each-tail');
+          tail.value = ''; tail.setSelectionRange(0, 0);
+          key(tail, 'Backspace');
+          s = await waitFor(async () => {
+            const s = await read();
+            return !s.recurring.some((r) => r.id === ruleId) &&
+              !s.day.tasks.some((t) => t.recurringId === ruleId) &&
+              !row()?.querySelector('.each-tag, .each-chip') ? s : null;
+          }, 'tail Backspace removes shared recurrence');
+          out.tailStopsRecurring = !row().querySelector('.each-tag') && !row().querySelector('.each-chip') &&
+            s.day.tasks.find((t) => t.id === id)?.title === 'Escape saved title';
+          box.focus(); key(box, 'Escape');
+          await committed('Escape saved title');
+
+          // Start a fresh each token on the same temporary task for the invalid-title regression.
+          box = await edit('Escape saved title', 'week');
+          key(row().querySelector('.each-value'), 'Tab');
+          const restored = await waitFor(async () => {
+            const s = await read(), task = s.day.tasks.find((t) => t.id === id);
+            const rule = s.recurring.find((r) => r.id === task?.recurringId);
+            return rule?.every === 1 && rule.unit === 'w' && !row()?.querySelector('.each-tag input') ? s : null;
+          }, 'fresh each token restores temporary recurrence');
+          const restoredRuleId = restored.day.tasks.find((t) => t.id === id).recurringId;
+          box.focus(); key(box, 'Escape');
+          await committed('Escape saved title');
+          const prior = await read();
+          box = await edit('Invalid description draft', 'invalid');
+          field = row().querySelector('.each-value');
+          key(field, 'Enter');
+          await pause(200);
+          out.invalidDescriptionEnter = unchanged(await read(), prior) && box.isConnected &&
+            box.value === 'Invalid description draft' && row().querySelector('.each-value')?.value === 'invalid';
+          key(box, 'Enter');
+          await pause(200);
+          out.invalidDescriptionEnter = out.invalidDescriptionEnter && unchanged(await read(), prior) && box.isConnected;
+          key(row().querySelector('.each-value'), 'Escape');
+          await waitFor(() => !row()?.querySelector('.each-tag input'), 'invalid description Esc closes frequency');
+          out.invalidDescriptionEscape = unchanged(await read(), prior) && box.isConnected &&
+            row().querySelector('.each-tag')?.textContent === 'each: 1w' &&
+            !document.querySelector('.each-help:popover-open');
+          box.value = 'Escape saved title';
+          box.dispatchEvent(new Event('input', { bubbles: true }));
+          box.focus(); key(box, 'Escape');
+          s = await committed('Escape saved title');
+          rule = s.recurring.find((r) => r.id === restoredRuleId);
+          out.invalidDescriptionEscape = out.invalidDescriptionEscape && rule?.title === 'Escape saved title' &&
+            rule.every === 1 && rule.unit === 'w' && s.day.tasks.find((t) => t.id === id).recurringId === restoredRuleId;
+          return out;
+        } finally {
+          addEditor.reset();
+          if (id) {
+            const s = await read(), task = s.day.tasks.find((t) => t.id === id);
+            if (task?.recurringId) await shapeday.call('recurring:delete', { id: task.recurringId });
+            await shapeday.call('task:delete', { id });
+            await waitFor(() => !document.querySelector('#task-list .title-edit'), 'temporary editor cleaned up');
+          }
+          input.focus();
+        }
+      `);
+      check('confirmed title tag Enter submits the clean title and closes the editor',
+        titleRegressions.confirmedTitleEnter, JSON.stringify(titleRegressions));
+      check('title Escape saves the valid clean title and shared recurrence',
+        titleRegressions.titleEscape, JSON.stringify(titleRegressions));
+      check('title inline Tab persists frequency; tail Backspace removes the shared rule and stops recurring',
+        titleRegressions.inlineTab && titleRegressions.tailStopsRecurring, JSON.stringify(titleRegressions));
+      check('invalid add Enter preserves tasks and rules; Escape cleans the input token',
+        titleRegressions.invalidAddEnter && titleRegressions.invalidAddEscape, JSON.stringify(titleRegressions));
+      check('invalid description Enter preserves title and recurrence; Escape safely restores and dismisses',
+        titleRegressions.invalidDescriptionEnter && titleRegressions.invalidDescriptionEscape, JSON.stringify(titleRegressions));
+      const renamed = await probeUI(`
+        document.querySelector('#task-list .title').click();
+        const input = await waitFor(() => document.querySelector('#task-list .title-edit'), 'title editor');
+        input.value = 'New title each: day';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const tag = await waitFor(() => document.querySelector('#task-list .title-entry .each-tag'), 'title inline tag');
+        await pause(1200); // a real snapshot tick must not destroy the focused inline tag
+        const draftFocused = tag.isConnected && visible(tag) && document.activeElement === tag.querySelector('.each-value') &&
+          input.value === 'New title' && tag.querySelector('.each-value')?.value === 'day' &&
+          document.querySelector('#task-list .each-chip').textContent === 'each: 1d';
+        tag.querySelector('.each-value').dispatchEvent(new KeyboardEvent('keydown',
+          { key: 'Tab', bubbles: true, cancelable: true }));
+        const confirmed = await waitFor(async () => {
+          const s = await shapeday.call('day:get');
+          return s.recurring.find((r) => r.id === ${JSON.stringify(added.ruleId)})?.unit === 'd' ? s : null;
+        }, 'title Tab persists day rule before blur');
+        const focused = draftFocused && tag.isConnected && !tag.querySelector('input') &&
+          tag.textContent === 'each: 1d' && document.activeElement === document.querySelector('#task-list .each-tail') &&
+          confirmed.day.tasks[0].title === 'Enter clean title';
+        document.getElementById('add-input').focus(); // real focusout submits the clean title after tag confirmation
+        const s = await waitFor(async () => {
+          const s = await shapeday.call('day:get');
+          return s.day.tasks[0]?.title === 'New title' && !document.querySelector('#task-list .title-edit') &&
+            document.querySelector('#task-list .title')?.textContent === 'New title' ? s : null;
+        }, 'blur commits clean title');
+        const rule = s.recurring.find((r) => r.id === ${JSON.stringify(added.ruleId)});
+        return { focused, clean: !document.querySelector('#task-list .title .each-tag') &&
+          !s.day.tasks[0].title.includes('each:') && s.day.tasks[0].recurringId === rule?.id &&
+          rule?.title === 'New title' && rule.every === 1 && rule.unit === 'd' &&
+          document.querySelector('#task-list .each-chip').textContent === 'each: 1d', rule };
+      `);
+      check('recurring title draft survives ticks; Tab confirms day rule and focuses tail without submitting title', renamed.focused, JSON.stringify(renamed));
+      check('recurring title blur strips inline tag and shares normalized d rule', renamed.clean, JSON.stringify(renamed));
+      const panel = await probeUI(`
+        const button = document.getElementById('btn-recurring');
+        button.scrollIntoView({ block: 'center' });
+        button.click();
+        const panel = await waitFor(() => document.querySelector('#recurring-panel:popover-open'), 'clock panel');
+        const b = button.getBoundingClientRect(), p = panel.getBoundingClientRect();
+        return { ok: visible(panel) && p.height > 0 && p.top >= b.bottom && p.left >= b.left - 1 &&
+          p.right > b.right && button.getAttribute('aria-expanded') === 'true' &&
+          panel.querySelectorAll('li').length === 1 && panel.querySelector('li span').textContent === 'New title' &&
+          panel.querySelector('.recurring-frequency').textContent === 'each: 1d',
+          button: { left: b.left, right: b.right, top: b.top, bottom: b.bottom },
+          panel: { left: p.left, right: p.right, top: p.top, bottom: p.bottom } };
+      `);
+      check('recurring clock opens compact panel right/below the actual button, never above', panel.ok, JSON.stringify(panel));
+      const estimates = await probeUI(`
+        const id = ${JSON.stringify(added.id)}, ruleId = ${JSON.stringify(added.ruleId)};
+        const read = () => shapeday.call('day:get');
+        const row = () => [...document.querySelectorAll('#recurring-list li[data-recurring-id]')]
+          .find((r) => r.dataset.recurringId === ruleId);
+        const open = () => !!document.querySelector('#recurring-panel:popover-open');
+        const initial = await read();
+        const task = initial.day.tasks.find((t) => t.id === id);
+        const rule = initial.recurring.find((r) => r.id === ruleId);
+        const original = task.estimateMin;
+        const changed = [41, 43, 47].find((minutes) => minutes !== original && minutes !== rule.estimateMin);
+        const label = row()?.querySelector('.recurring-minutes');
+        const buttons = [...(row()?.querySelectorAll('button') || [])];
+        const initialOK = label?.textContent === rule.estimateMin + 'm' && visible(label) &&
+          buttons.length === 1 && buttons[0].textContent === '×';
+        await shapeday.call('task:setEstimate', { id, minutes: changed });
+        await pause(1200);
+        const edited = await read();
+        const isolated = edited.day.tasks.find((t) => t.id === id)?.estimateMin === changed &&
+          JSON.stringify(edited.recurring.find((r) => r.id === ruleId)) === JSON.stringify(rule) &&
+          row()?.querySelector('.recurring-minutes')?.textContent === rule.estimateMin + 'm' && open();
+        row().querySelector('.recurring-minutes').click();
+        const input = await waitFor(() => row()?.querySelector('.recurring-minutes-edit'), 'rule minutes editor');
+        const seeded = input.value === String(rule.estimateMin) && document.activeElement === input;
+        input.value = '17';
+        await pause(1200);
+        const tick = input.isConnected && row().querySelector('.recurring-minutes-edit') === input &&
+          document.activeElement === input && input.value === '17' && open();
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        await waitFor(() => !row()?.querySelector('.recurring-minutes-edit') &&
+          row()?.querySelector('.recurring-minutes')?.textContent === '17m', 'Enter renders 17m');
+        const committed = await read(), updated = committed.recurring.find((r) => r.id === ruleId);
+        return { initial: initialOK, isolated, tick: seeded && tick, original, changed, nextAt: rule.nextAt,
+          enter: updated?.estimateMin === 17 && updated.nextAt === rule.nextAt && open() &&
+            committed.day.tasks.find((t) => t.id === id)?.estimateMin === changed };
+      `);
+      check('recurring panel minutes display rule estimate with only remove button', estimates.initial, JSON.stringify(estimates));
+      check('main task estimate edit preserves future rule and open recurring panel', estimates.isolated, JSON.stringify(estimates));
+      check('recurring minutes editor keeps focused draft across snapshot ticks', estimates.tick, JSON.stringify(estimates));
+      check('recurring minutes Enter saves 17m and preserves existing main estimate and nextAt', estimates.enter, JSON.stringify(estimates));
+      store.flush();
+      const persistedEstimates = JSON.parse(fs.readFileSync(require('path').join(app.getPath('userData'), 'shapeday.json'), 'utf8'));
+      check('recurring:setEstimate persists 17m independently of existing main task',
+        persistedEstimates.recurring.find((r) => r.id === added.ruleId)?.estimateMin === 17 &&
+          persistedEstimates.recurring.find((r) => r.id === added.ruleId)?.nextAt === estimates.nextAt &&
+          persistedEstimates.days[before.date]?.tasks.find((t) => t.id === added.id)?.estimateMin === estimates.changed);
+      const estimateCommits = await probeUI(`
+        const id = ${JSON.stringify(added.id)}, ruleId = ${JSON.stringify(added.ruleId)};
+        const changed = ${JSON.stringify(estimates.changed)}, nextAt = ${JSON.stringify(estimates.nextAt ?? null)};
+        const row = () => [...document.querySelectorAll('#recurring-list li[data-recurring-id]')]
+          .find((r) => r.dataset.recurringId === ruleId);
+        const panel = document.getElementById('recurring-panel'), button = document.getElementById('btn-recurring');
+        const geometry = () => {
+          const b = button.getBoundingClientRect(), p = panel.getBoundingClientRect(), r = row().getBoundingClientRect();
+          const children = [...row().children].map((el) => el.getBoundingClientRect());
+          return p.width <= 356 && p.height <= 100 && p.top >= b.bottom && p.left >= b.left - 1 &&
+            p.right > b.right && p.right <= innerWidth && panel.scrollWidth <= panel.clientWidth &&
+            row().scrollWidth <= row().clientWidth && children.every((c) => c.left >= r.left && c.right <= r.right + 1) &&
+            children.every((c, i) => !i || children[i - 1].right <= c.left);
+        };
+        let geometryOK = geometry(), scheduleOK = true, mainOK = true;
+        const edit = async (value, key, expected) => {
+          row().querySelector('.recurring-minutes').click();
+          const input = await waitFor(() => row()?.querySelector('.recurring-minutes-edit'), 'rule minutes input');
+          input.value = value;
+          geometryOK = geometryOK && geometry();
+          if (key === 'blur') {
+            const outside = document.getElementById('add-input');
+            outside.focus(); // exercise the input's real blur handler before outside-click dismissal
+            outside.click();
+          } else input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+          await waitFor(() => !row()?.querySelector('.recurring-minutes-edit'), 'rule minutes editor closes');
+          await pause(150);
+          const s = await shapeday.call('day:get'), rule = s.recurring.find((r) => r.id === ruleId);
+          scheduleOK = scheduleOK && (rule?.nextAt ?? null) === nextAt;
+          mainOK = mainOK && s.day.tasks.find((t) => t.id === id)?.estimateMin === changed;
+          return rule?.estimateMin === expected && row().querySelector('.recurring-minutes').textContent === expected + 'm' &&
+            (key === 'blur' ? !panel.matches(':popover-open') && button.getAttribute('aria-expanded') === 'false' :
+              panel.matches(':popover-open') && button.getAttribute('aria-expanded') === 'true');
+        };
+        const invalid = [];
+        for (const value of ['', '0', '481', '-1', '2.5', 'abc']) {
+          for (const key of ['Enter', 'Escape', 'Tab', 'blur']) {
+            invalid.push({ value, key, ok: await edit(value, key, 17) });
+            if (key === 'blur') button.click();
+          }
+        }
+        const minimum = await edit('1', 'Enter', 1), maximum = await edit('480', 'Enter', 480);
+        const escape = await edit('23', 'Escape', 23), tab = await edit('29', 'Tab', 29);
+        const blur = await edit('31', 'blur', 31);
+        button.click(); // leave the panel open for the existing outside-click/delete flow
+        geometryOK = geometryOK && geometry();
+        return { invalid, minimum, maximum, escape, tab, blur, geometry: geometryOK, schedule: scheduleOK, main: mainOK };
+      `);
+      check('recurring minutes invalid drafts cancel on Enter/Escape/Tab/blur',
+        estimateCommits.invalid.every((r) => r.ok), JSON.stringify(estimateCommits.invalid));
+      check('recurring minutes accepts whole-minute boundaries 1 and 480', estimateCommits.minimum && estimateCommits.maximum);
+      check('recurring minutes Escape saves 23m and keeps panel open', estimateCommits.escape);
+      check('recurring minutes Tab saves 29m and keeps panel open', estimateCommits.tab);
+      check('recurring minutes outside blur saves 31m and closes panel', estimateCommits.blur);
+      check('recurring minutes edits preserve main task estimate and nextAt', estimateCommits.main && estimateCommits.schedule);
+      check('recurring minutes row stays compact without horizontal overflow right/below clock', estimateCommits.geometry);
+      store.flush();
+      const finalEstimates = JSON.parse(fs.readFileSync(require('path').join(app.getPath('userData'), 'shapeday.json'), 'utf8'));
+      check('recurring minutes outside blur persists 31m with unchanged schedule and main task',
+        finalEstimates.recurring.find((r) => r.id === added.ruleId)?.estimateMin === 31 &&
+          finalEstimates.recurring.find((r) => r.id === added.ruleId)?.nextAt === estimates.nextAt &&
+          finalEstimates.days[before.date]?.tasks.find((t) => t.id === added.id)?.estimateMin === estimates.changed);
+      await call('task:setEstimate', { id: added.id, minutes: estimates.original });
+      const restoredEstimate = await call('day:get');
+      check('main estimate restored while future recurring estimate remains 31m',
+        restoredEstimate.day.tasks.find((t) => t.id === added.id)?.estimateMin === estimates.original &&
+          restoredEstimate.recurring.find((r) => r.id === added.ruleId)?.estimateMin === 31);
+      const removed = await probeUI(`
+        document.getElementById('add-input').click(); // this input stops bubbling, so dismissal must run in capture phase
+        const button = document.getElementById('btn-recurring');
+        const outside = !document.querySelector('#recurring-panel:popover-open') &&
+          button.getAttribute('aria-expanded') === 'false';
+        button.click();
+        const remove = await waitFor(() => document.querySelector('#recurring-panel:popover-open li button'), 'rule delete button');
+        remove.click();
+        const s = await waitFor(async () => {
+          const s = await shapeday.call('day:get');
+          return !s.recurring.length && document.getElementById('recurring-count').hidden &&
+            !document.querySelector('#task-list .each-chip') ? s : null;
+        }, 'deleted rule removes chip and badge');
+        return { outside, removed: s.day.tasks.length === 1 && s.day.tasks[0].id === ${JSON.stringify(added.id)} &&
+          s.day.tasks[0].title === 'New title' && !s.day.tasks[0].recurringId &&
+          !document.querySelector('#recurring-list li') };
+      `);
+      check('recurring panel collapses on outside click', removed.outside, JSON.stringify(removed));
+      check('recurring UI delete stops rule and hides badge/chip without deleting task', removed.removed, JSON.stringify(removed));
+
+      // Use the overlay's actual button and the toast's actual accept action.
+      await win.webContents.executeJavaScript('window.__events = [], true');
+      const manualBefore = await call('day:get');
+      const overlay = windows.ALL.find((w) => w.webContents.getURL().includes('bar.html'));
+      const pressed = await overlay.webContents.executeJavaScript(`(() => {
+        const button = document.getElementById('top-break');
+        const visible = !document.getElementById('topbar').hidden && button.getClientRects().length > 0 && !button.disabled;
+        button.click();
+        return visible;
+      })()`);
+      await sleep(500);
+      const proposals = await win.webContents.executeJavaScript('window.__events.filter(e => e.type === "break-propose")');
+      const notice = await toast().webContents.executeJavaScript(`(() => ({
+        headline: document.getElementById('headline').textContent,
+        sub: document.getElementById('sub').textContent,
+        proposing: !document.getElementById('propose').hidden,
+        expected: I18N.t('en-us', 'toast.manual'),
+        done: I18N.t('en-us', 'toast.done'),
+        expectedSub: I18N.t('en-us', 'toast.manual_text', { n: ${manualBefore.settings.breakMinutes} })
+      }))()`);
+      const proposed = await call('day:get');
+      check('manual break overlay button sends manual proposal and non-Task-done toast',
+        pressed && proposals.length === 1 && proposals[0].data?.manual === true && toast().isVisible() &&
+          notice.proposing && notice.headline === notice.expected && notice.headline !== notice.done &&
+          !/task done/i.test(notice.headline) && notice.sub === notice.expectedSub &&
+          proposed.active?.id === manualBefore.active?.id && proposed.day.tasks[0].status === 'yellow',
+        JSON.stringify({ proposals, notice }));
+      await toast().webContents.executeJavaScript('document.getElementById("accept").click(), true');
+      await sleep(500);
+      const parked = await call('day:get');
+      const parkedUI = await probeUI(`
+        return !!(await waitFor(() => document.querySelector('#task-list li.task.paused') &&
+          !document.querySelector('#task-list li.task.green'), 'paused row, no green'));
+      `);
+      check('manual break toast accept parks active task without marking it green',
+        !!parked.break && !parked.active && parkedUI && parked.day.tasks[0].id === manualBefore.active?.id &&
+          parked.day.tasks[0].status === 'paused' && !parked.day.tasks[0].finishedAt &&
+          parked.day.tasks.every((t) => t.status !== 'green'), JSON.stringify(parked.day.tasks));
+      await call('break:end');
+      await call('break:respond', { accept: false });
+
+      // Give yesterday a distinctive task to catch rendering snap.day instead of r.day.
+      const historicalTitle = 'E2E historical summary only';
+      const start = new Date(pastDate + 'T10:00:00').getTime();
+      store.updateDay(pastDate, (d) => {
+        d.tasks.push({ id: 'e2e-historical-summary', title: historicalTitle, status: 'green',
+          estimateMin: 17, startedAt: start, finishedAt: start + 11 * 60000,
+          worked: [{ start, end: start + 11 * 60000 }] });
+      });
+      const historical = await probeUI(`
+        const today = ${JSON.stringify(before.date)}, yesterday = ${JSON.stringify(pastDate)};
+        const title = ${JSON.stringify(historicalTitle)};
+        document.querySelector('[data-view=sum]').click();
+        document.querySelector('[data-scope=day]').click();
+        const input = document.getElementById('sum-date'), next = document.getElementById('sum-next');
+        input.value = today;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        await waitFor(() => document.querySelector('#sum-detail .day-table')?.textContent.includes('New title'), 'today detail');
+        const initial = input.value === today && input.max === today && next.disabled;
+        document.getElementById('sum-prev').click();
+        await waitFor(() => document.querySelector('#sum-detail .day-table')?.textContent.includes(title), 'historical detail from r.day');
+        const report = await shapeday.call('report:get', { scope: 'day', date: yesterday });
+        const cells = [...document.querySelectorAll('#sum-detail .day-table tr')]
+          .find((r) => r.firstElementChild?.textContent === title)?.querySelectorAll('td');
+        const previous = input.value === yesterday && input.max === today && !next.disabled &&
+          report.date === yesterday && report.day.tasks.some((t) => t.title === title) &&
+          !document.getElementById('sum-detail').textContent.includes('New title') &&
+          cells?.[2].textContent === '17m' && cells?.[3].textContent === '11m';
+        next.click();
+        await waitFor(() => document.querySelector('#sum-detail .day-table')?.textContent.includes('New title'), 'next restores today detail');
+        const restored = input.value === today && next.disabled && !document.getElementById('sum-detail').textContent.includes(title);
+        input.value = yesterday;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        await waitFor(() => document.getElementById('sum-detail').textContent.includes(title), 'date picker selects historical day');
+        const picker = input.value === yesterday && !next.disabled;
+        input.value = today;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        await waitFor(() => document.getElementById('sum-detail').textContent.includes('New title'), 'picker restores today');
+        return { initial, previous, restored, picker, date: input.value, max: input.max };
+      `);
+      check('historical summary UI prev/next honors date value/max/today and renders selected r.day detail',
+        historical.initial && historical.previous && historical.restored, JSON.stringify(historical));
+      check('historical summary date picker selects a past day and returns to today', historical.picker, JSON.stringify(historical));
+    } catch (e) {
+      const errors = await win.webContents.executeJavaScript('JSON.stringify(window.__uiErrors)');
+      check('recurring/manual-break/historical UI regression flow completes', false, (e.stack || String(e)) + ' renderer errors: ' + errors);
+    } finally {
+      // Dismiss editors/popovers before restoring the workload, even on assertion/setup failure.
+      await win.webContents.executeJavaScript(`(() => {
+        const editor = document.querySelector('.title-edit, .each-chip .each-value');
+        editor?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        document.getElementById('add-input').focus();
+        addEditor.reset(); // also removes any helper/tag left by an interrupted add flow
+        const date = document.getElementById('sum-date');
+        date.value = date.max;
+        date.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('hd-day').click();
+        document.querySelector('[data-view=plan]').click();
+        return true;
+      })()`);
+      await call('break:end');
+      await call('break:respond', { accept: false });
+      store.updateRecurring((rules) => rules.splice(0, rules.length, ...savedRules));
+      store.updateDay(before.date, (d) => {
+        for (const key of Object.keys(d)) delete d[key];
+        Object.assign(d, savedDay);
+      });
+      if (savedPast) store.updateDay(pastDate, (d) => {
+        for (const key of Object.keys(d)) delete d[key];
+        Object.assign(d, savedPast);
+      });
+      await call('settings:set', savedSettings);
+      store.flush();
+      await sleep(1200);
+    }
+  }
+
   // tray-restore regression: closing must hide (not destroy) the window, and
   // showing it again must not throw "Object has been destroyed"
   const mainW = getMainWin();
@@ -857,6 +1864,8 @@ async function run({ app, getMainWin, state, store, windows }) {
   check('close hides to tray; restore works without destroy', hiddenNotDestroyed && restored,
     `hidden=${hiddenNotDestroyed} restored=${restored}`);
 
+  const uiErrors = await win.webContents.executeJavaScript('window.__uiErrors || []');
+  check('renderer completes interactions without uncaught errors', uiErrors.length === 0, JSON.stringify(uiErrors));
   fs.writeFileSync('/tmp/shapeday-e2e.json', JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok);
   console.log(`e2e: ${results.length - failed.length}/${results.length} passed`);

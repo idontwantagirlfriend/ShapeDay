@@ -440,7 +440,7 @@
     m0 = Math.max(0, m0 - 30);
     const m1 = 24 * 60;
 
-    const padT = 34, padB = 10;
+    const padT = 10, padB = 10;
     const colW = W / dates.length;
     const plotH = H - padT - padB;
     const yOf = (m) => padT + ((m - m0) / (m1 - m0)) * plotH;
@@ -451,13 +451,8 @@
     dates.forEach((date, i) => {
       const x = i * colW;
       const d = byKey.get(date);
-      const dayNum = Number(date.slice(8));
       const isToday = date === data.todayKey;
-
-      // header
-      ctx.fillStyle = isToday ? '#aed8fc' : '#9aa1ad';
-      ctx.textAlign = 'center';
-      ctx.fillText(`Mon Tue Wed Thu Fri Sat Sun`.split(' ')[i] + ` ${dayNum}`, x + colW / 2, 8);
+      // Date navigation lives in the semantic DOM header above the canvas.
 
       if (!d) {
         // future day in this week: grayed out
@@ -477,9 +472,6 @@
         ctx.fillStyle = 'rgba(128, 61, 58, 0.5)';
         ctx.fillRect(x + 3, yOf(endMin), colW - 6, d.overworkMin * scale);
       }
-
-      // column-level hit (behind the tasks): clicking the column selects the day
-      hits.push({ kind: 'day', x: x + 3, y: padT, w: colW - 6, h: plotH, date, tasks: [], summary: d?.summary || '' });
 
       // task blocks stacked from work start, height = planned minutes
       let cursor = startMin;

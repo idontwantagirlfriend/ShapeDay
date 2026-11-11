@@ -33,6 +33,8 @@
       llm: { baseUrl: '', apiKey: '', model: '' }, // user-supplied, OpenAI-compatible
     },
     days: {},
+    recurring: [],
+    lastDailyLaunch: null,
     // one definitive summary per period, latest wins:
     // '2026-09-14' | '2026-W37' | '2026-09' | '2026' → {at, recap, suggestions}
     summaries: {},
@@ -50,6 +52,8 @@
       settings: { ...DEFAULTS.settings, ...(data?.settings || {}) },
       days: data?.days || {},
       summaries: data?.summaries || {},
+      recurring: Array.isArray(data?.recurring) ? data.recurring : [],
+      lastDailyLaunch: data?.lastDailyLaunch || null,
     };
 
     let writeTimer = null;
@@ -68,6 +72,17 @@
         Object.assign(state.settings, patch || {});
         schedule();
         return state.settings;
+      },
+      get recurring() { return state.recurring; },
+      get lastDailyLaunch() { return state.lastDailyLaunch; },
+      markDailyLaunch(dateKey) {
+        state.lastDailyLaunch = dateKey;
+        schedule();
+      },
+      updateRecurring(mutate) {
+        const result = mutate(state.recurring);
+        schedule();
+        return result;
       },
       day(dateKey) {
         return state.days[dateKey] || null;
