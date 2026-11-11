@@ -765,7 +765,12 @@ async function run({ app, getMainWin, state, store, windows }) {
       out.weekClick = !bubble.hidden && bubble.textContent.length > 0;
       const anchorPos = bubble.style.left + '|' + bubble.style.top;
       out.copies = bubble.querySelectorAll('.copy-btn').length;
-      out.copyHidden = [...bubble.querySelectorAll('.copy-btn')].every((b) => getComputedStyle(b).opacity === '0');
+      // The contract is "hidden until its row is hovered"; on CI the real
+      // pointer can already rest on one row, so that row may show its button.
+      out.copyHidden = [...bubble.querySelectorAll('.copy-btn')].every((b) =>
+        getComputedStyle(b).opacity === '0' || b.closest('.copy-row').matches(':hover'));
+      out.hover = [...document.querySelectorAll(':hover')].slice(-4)
+        .map((e) => e.id || e.className || e.tagName);
       // moving on the chart must not move it; leaving the bubble dismisses
       canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 8, clientY: cy + 4 }));
       await new Promise((r2) => setTimeout(r2, 150));
@@ -877,13 +882,15 @@ async function run({ app, getMainWin, state, store, windows }) {
         const filled = cells.filter((c) => !c.classList.contains('empty'));
         const fullText = filled.length > 0 && filled.every((c) => c.textContent === c.dataset.date + '\\n' + ${JSON.stringify(longText)} &&
           getComputedStyle(c).overflowY === 'auto' && c.scrollHeight > c.clientHeight);
+        // CI's pointer can rest on the gutter, which is the same palette's hover tint.
+        const thumbOK = (c) => c === 'rgb(72, 82, 99)' || c === 'rgb(113, 129, 153)';
         const scrollbar = (el, width) => {
           const bar = getComputedStyle(el, '::-webkit-scrollbar');
           const thumb = getComputedStyle(el, '::-webkit-scrollbar-thumb');
           const track = getComputedStyle(el, '::-webkit-scrollbar-track');
           const buttons = getComputedStyle(el, '::-webkit-scrollbar-button');
           return parseFloat(bar.width) === width && bar.display !== 'none' &&
-            thumb.backgroundColor === 'rgb(72, 82, 99)' && parseFloat(thumb.borderRadius) >= 20 &&
+            thumbOK(thumb.backgroundColor) && parseFloat(thumb.borderRadius) >= 20 &&
             thumb.backgroundClip === 'padding-box' && track.backgroundColor === 'rgba(0, 0, 0, 0)' &&
             buttons.display === 'none' && getComputedStyle(el).scrollbarGutter === 'stable';
         };
@@ -933,7 +940,8 @@ async function run({ app, getMainWin, state, store, windows }) {
           !selected.hidden && box.hidden && header.hidden;
         selected.click(); await pause(500);
         return { initial, fullText, expanded, independent, preserved, periodFull, periodExpanded,
-          blankQuiet, collapsed, periodCollapsed, navigates, cap, cellScroll, customScrollbars };
+          blankQuiet, collapsed, periodCollapsed, navigates, cap, cellScroll, customScrollbars,
+          hover: [...document.querySelectorAll(':hover')].slice(-4).map((e) => e.id || e.className || e.tagName) };
       })()`);
       check('week header has seven semantic date buttons; summary cells default to equal 112px full-text scroll areas',
         weekContract.initial && weekContract.fullText, JSON.stringify(weekContract));
@@ -973,8 +981,10 @@ async function run({ app, getMainWin, state, store, windows }) {
             const p = pop.getBoundingClientRect(), s = summary.getBoundingClientRect();
             const scrollStyle = getComputedStyle(pop, '::-webkit-scrollbar');
             const thumbStyle = getComputedStyle(pop, '::-webkit-scrollbar-thumb');
+            // CI's pointer can rest on the gutter, which is the same palette's hover tint.
+            const thumbOK = (c) => c === 'rgb(72, 82, 99)' || c === 'rgb(113, 129, 153)';
             const customScrollbars = parseFloat(scrollStyle.width) === 10 && scrollStyle.display !== 'none' &&
-              thumbStyle.backgroundColor === 'rgb(72, 82, 99)' && parseFloat(thumbStyle.borderRadius) >= 20 &&
+              thumbOK(thumbStyle.backgroundColor) && parseFloat(thumbStyle.borderRadius) >= 20 &&
               getComputedStyle(pop).scrollbarGutter === 'stable';
             const bounded = settings.open && p.left >= 0 && p.right <= innerWidth + 1 &&
               p.top >= s.bottom && p.bottom <= innerHeight - 8 && getComputedStyle(pop).overflowY === 'auto' &&
@@ -1010,6 +1020,7 @@ async function run({ app, getMainWin, state, store, windows }) {
             const aligned = Math.abs(cr.width - hr.width) <= 1 && Math.abs(cr.left - hr.left) <= 1 &&
               Math.abs(canvas.width - canvas.clientWidth * devicePixelRatio) <= 1;
             return { stable, bounded, ownScroll, reachable, closesStable, defaults, capOK, aligned, customScrollbars,
+              hover: [...document.querySelectorAll(':hover')].slice(-4).map((e) => e.id || e.className || e.tagName),
               scrollbarStyle: { width: scrollStyle.width, display: scrollStyle.display, color: thumbStyle.backgroundColor,
                 radius: thumbStyle.borderRadius, gutter: getComputedStyle(pop).scrollbarGutter },
               viewport: [innerWidth, innerHeight], cap, baseline, opened, controls: controls.length,
