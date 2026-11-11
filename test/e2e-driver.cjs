@@ -9,11 +9,25 @@ const fs = require('fs');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Failed checks become job annotations, so a red CI run names itself. */
+function annotate(text) {
+  if (!process.env.GITHUB_ACTIONS) return;
+  const escaped = String(text)
+    .replace(/%/g, '%25')
+    .replace(/\r/g, '%0D')
+    .replace(/\n/g, '%0A')
+    .slice(0, 3000);
+  console.log(`::error::${escaped}`);
+}
+
 async function run({ app, getMainWin, state, store, windows }) {
   const results = [];
+  let annotated = 0;
   const check = (name, ok, detail) => {
     results.push({ name, ok: !!ok, detail: detail ?? '' });
     console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`);
+    // GitHub keeps 10 error annotations per step; leave room for the log tail.
+    if (!ok && annotated < 5) { annotated++; annotate(`${name}${detail ? ' — ' + detail : ''}`); }
   };
 
   const win = getMainWin();
@@ -1872,4 +1886,4 @@ async function run({ app, getMainWin, state, store, windows }) {
   app.exit(failed.length ? 1 : 0);
 }
 
-module.exports = { run };
+module.exports = { run, annotate };

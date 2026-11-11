@@ -69,7 +69,21 @@ jobs:
       - name: End-to-end UI tests
         if: runner.os == 'Linux'
         timeout-minutes: 10
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" npm run test:e2e
+        shell: bash
+        run: |
+          # Keep the full log and surface its tail as annotations; a failing
+          # step otherwise only says "exit code 1", and logs need a sign-in.
+          set -o pipefail
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            tail -n 5 "$RUNNER_TEMP/e2e.log" | while IFS= read -r line; do
+              line=${line//'%'/'%25'}
+              line=${line//$'\r'/'%0D'}
+              echo "::error::$line"
+            done
+          fi
+          exit "$status"
       - name: Build installers
         shell: bash
         env:

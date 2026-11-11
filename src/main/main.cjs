@@ -477,9 +477,10 @@ if (!gotLock) {
 
     // Headless-ish end-to-end harness: SHAPEDAY_E2E=1 electron . --no-sandbox
     if (process.env.SHAPEDAY_E2E) {
-      const { run } = require('../../test/e2e-driver.cjs');
+      const { run, annotate } = require('../../test/e2e-driver.cjs');
       setTimeout(() => run({ app, getMainWin: () => mainWin, state, store, windows }).catch((e) => {
         console.error('e2e driver crashed:', e);
+        annotate(`e2e driver crashed: ${(e && e.stack) || e}`);
         app.exit(1);
       }), 800);
     }
